@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Braces } from 'lucide-react'
 import { Modal } from './Modal'
 import { extractParams, insertParamPlaceholder } from '../../../shared/params'
@@ -31,6 +31,7 @@ export function SnippetEditor({ snippet, categories, defaultCategoryId, onSave, 
   const [newCategory, setNewCategory] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const commandRef = useRef<HTMLTextAreaElement>(null)
+  const pendingCaret = useRef<number | null>(null)
 
   const params = useMemo(() => extractParams(command), [command])
   const hasEmptyPlaceholder = /\{\{\s*\}\}/.test(command)
@@ -39,14 +40,21 @@ export function SnippetEditor({ snippet, categories, defaultCategoryId, onSave, 
     const el = commandRef.current
     if (!el) return
     const { text, caret } = insertParamPlaceholder(command, el.selectionStart, el.selectionEnd)
+    pendingCaret.current = caret
     setCommand(text)
     setErrors((e) => ({ ...e, command: '' }))
-    // Değer React tarafından yazıldıktan sonra imleci parantezlerin ortasına koy.
-    requestAnimationFrame(() => {
-      el.focus()
-      el.setSelectionRange(caret, caret)
-    })
   }
+
+  // Değer React tarafından yazıldıktan hemen sonra imleci parantezlerin ortasına koy.
+  // (requestAnimationFrame arka plandaki/örtülü pencerelerde gecikebildiği için kullanılmıyor.)
+  useLayoutEffect(() => {
+    const caret = pendingCaret.current
+    const el = commandRef.current
+    if (caret === null || !el) return
+    pendingCaret.current = null
+    el.focus()
+    el.setSelectionRange(caret, caret)
+  }, [command])
 
   const onCommandKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     const mod = isMac ? e.metaKey : e.ctrlKey
