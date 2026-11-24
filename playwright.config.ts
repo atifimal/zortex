@@ -5,6 +5,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   workers: 1,
-  reporter: [['list']],
+  // CI'da hatalar GitHub annotation olarak da raporlanır (job loglarını açmadan görülebilir).
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   use: { trace: 'retain-on-failure' }
 })
