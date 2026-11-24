@@ -1,0 +1,59 @@
+appId: com.atifimal.zortex
+productName: Zortex
+copyright: Copyright © 2026 Atif Imal
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+  # node-pty: yalnızca çalışma zamanı dosyaları; kaynak kod ve hata ayıklama sembolleri paketlenmez.
+  - "!node_modules/node-pty/{src,deps,third_party,scripts,typings,binding.gyp}"
+  - "!node_modules/node-pty/**/*.{pdb,map,ts}"
+  - "!node_modules/node-pty/lib/**/*.test.js"
+
+# Yerel modüller ve yardımcı süreçler asar arşivinin dışında olmalı.
+asarUnpack:
+  - node_modules/node-pty/**
+
+win:
+  icon: build/icon.png
+  target:
+    - target: portable
+      arch: [x64]
+  files:
+    - "!node_modules/node-pty/prebuilds/{darwin-*,linux-*,win32-arm64}"
+
+portable:
+  artifactName: ${productName}-${version}-portable.exe
+  # Her açılışta yeniden çıkarmamak için açılmış dosyalar önbellekte tutulur.
+  unpackDirName: Zortex
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  target:
+    - target: zip
+    - target: dmg
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  # Apple Developer sertifikası yok: ad-hoc imza (Apple Silicon'da çalışabilmesi için gerekli).
+  identity: "-"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  files:
+    - "!node_modules/node-pty/prebuilds/{win32-*,linux-*}"
+    - "!node_modules/node-pty/build"
+  extendInfo:
+    NSHumanReadableCopyright: Copyright © 2026 Atif Imal
+
+dmg:
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+npmRebuild: false
+
+# Yalnızca Türkçe ve İngilizce Chromium dil dosyaları (yaklaşık 45 MB tasarruf).
+electronLanguages:
+  - tr
+  - en-US
