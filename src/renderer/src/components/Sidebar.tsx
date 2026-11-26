@@ -1,5 +1,17 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode
+} from 'react'
+import {
+  ArrowDownUp,
+  Check,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -8,6 +20,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  GripVertical,
   Pencil,
   Play,
   Plus,
@@ -17,6 +30,7 @@ import {
 } from 'lucide-react'
 import { foldText, groupSnippets } from '../../../shared/search'
 import { extractParams } from '../../../shared/params'
+import { DEFAULT_SNIPPET_SORT, SNIPPET_SORTS, isSnippetSort, moveInOrder, type SnippetSort } from '../../../shared/sort'
 import type { Category, Snippet } from '../../../shared/types'
 import { loadPref, savePref } from '../lib/storage'
 import { shortcutLabel } from '../lib/platform'
@@ -37,7 +51,14 @@ interface Props {
   onNewCategory(): void
   onRenameCategory(category: Category): void
   onDeleteCategory(category: Category): void
+  onReorder(order: string[], moved?: { id: string; categoryId: string }): void
+  onInfo(message: string): void
 }
+
+/** Sürüklenen snippet'in bırakılacağı yer: bir snippet'in üstü/altı ya da kategorinin sonu. */
+type DropTarget = { categoryId: string; snippetId?: string; edge?: 'top' | 'bottom' }
+
+const DRAG_TYPE = 'application/x-zortex-snippet'
 
 const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
 
@@ -73,8 +94,13 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
   const { categories, snippets, targetLabel, onRun } = props
   const [query, setQuery] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(loadPref('collapsedCategories', [], isStringArray)))
+  const [sort, setSort] = useState<SnippetSort>(() => loadPref('snippetSort', DEFAULT_SNIPPET_SORT, isSnippetSort))
+  const [sortOpen, setSortOpen] = useState(false)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [drop, setDrop] = useState<DropTarget | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const sortRef = useRef<HTMLDivElement>(null)
 
   useImperativeHandle(ref, () => ({
     focusSearch() {
@@ -83,7 +109,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
     }
   }))
 
-  const groups = useMemo(() => groupSnippets(categories, snippets, query), [categories, snippets, query])
+  const groups = useMemo(() => groupSnippets(categories, snippets, query, sort), [categories, snippets, query, sort])
   const terms = useMemo(() => foldText(query).split(/\s+/).filter(Boolean), [query])
   const searching = terms.length > 0
   const resultCount = groups.reduce((n, g) => n + g.snippets.length, 0)
@@ -100,6 +126,75 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
   }
   const allCollapsed = categories.length > 0 && categories.every((c) => collapsed.has(c.id))
   const toggleAll = (): void => setCollapsedPersist(allCollapsed ? new Set() : new Set(categories.map((c) => c.id)))
+
+  const canReorder = !searching
+
+  const changeSort = (next: SnippetSort): void => {
+    setSort(next)
+    savePref('snippetSort', next)
+  }
+
+  useEffect(() => {
+    if (!sortOpen) return
+    const close = (e: MouseEvent): void => {
+      if (!sortRef.current?.contains(e.target as Node)) setSortOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [sortOpen])
+
+  /**
+   * Snippet'i hedef kategoride `beforeId`'nin önüne (yoksa sona) taşır.
+   * Alfabetik vb. bir sıralama seçiliyse ekrandaki sıra özel sıra olarak benimsenir.
+   */
+  const moveSnippet = (id: string, categoryId: string, beforeId: string | null): void => {
+    const visible = groups.flatMap((g) => g.snippets.map((s) => s.id))
+    const categoryOf = (x: string): string | undefined =>
+      x === id ? categoryId : snippets.find((s) => s.id === x)?.categoryId
+    props.onReorder(moveInOrder(visible, id, categoryId, beforeId, categoryOf), { id, categoryId })
+    if (sort !== 'manual') {
+      changeSort('manual')
+      props.onInfo('Sıralama “Özel sıra” olarak değiştirildi')
+    }
+    if (collapsed.has(categoryId)) toggle(categoryId)
+  }
+
+  const endDrag = (): void => {
+    setDragId(null)
+    setDrop(null)
+  }
+
+  const onSnippetDragOver = (e: DragEvent<HTMLDivElement>, categoryId: string, snippetId: string): void => {
+    if (!dragId) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = e.currentTarget.getBoundingClientRect()
+    const edge = e.clientY < rect.top + rect.height / 2 ? 'top' : 'bottom'
+    if (drop?.snippetId !== snippetId || drop.edge !== edge) setDrop({ categoryId, snippetId, edge })
+  }
+
+  const onCategoryDragOver = (e: DragEvent<HTMLDivElement>, categoryId: string): void => {
+    if (!dragId) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (drop?.categoryId !== categoryId || drop.snippetId) setDrop({ categoryId })
+  }
+
+  const onDropAt = (e: DragEvent<HTMLDivElement>, items: Snippet[]): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    const id = dragId
+    const target = drop
+    endDrag()
+    if (!id || !target) return
+    let beforeId: string | null = null
+    if (target.snippetId) {
+      const at = items.findIndex((s) => s.id === target.snippetId)
+      beforeId = target.edge === 'top' ? target.snippetId : (items[at + 1]?.id ?? null)
+    }
+    moveSnippet(id, target.categoryId, beforeId)
+  }
 
   const focusableItems = (): HTMLElement[] => [...(listRef.current?.querySelectorAll<HTMLElement>('[data-nav-item]') ?? [])]
 
@@ -122,6 +217,22 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
 
   const onListKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    const snippetId = (document.activeElement as HTMLElement | null)?.dataset.snippetId
+    if (e.altKey && snippetId) {
+      // Alt + ↑/↓: odaktaki snippet'i kategorisi içinde bir sıra kaydırır.
+      e.preventDefault()
+      const group = canReorder ? groups.find((g) => g.snippets.some((s) => s.id === snippetId)) : undefined
+      if (!group) return
+      const list = group.snippets
+      const at = list.findIndex((s) => s.id === snippetId)
+      if (e.key === 'ArrowUp' && at > 0) moveSnippet(snippetId, group.category.id, list[at - 1].id)
+      else if (e.key === 'ArrowDown' && at < list.length - 1) moveSnippet(snippetId, group.category.id, list[at + 2]?.id ?? null)
+      else return
+      requestAnimationFrame(() =>
+        listRef.current?.querySelector<HTMLElement>(`[data-snippet-id="${CSS.escape(snippetId)}"]`)?.focus()
+      )
+      return
+    }
     const items = focusableItems()
     const index = items.indexOf(document.activeElement as HTMLElement)
     if (index === -1) return
@@ -164,6 +275,50 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
           <button className="btn btn-small" onClick={props.onNewCategory} title="Yeni kategori" data-testid="new-category">
             <FolderPlus size={16} /> Kategori
           </button>
+          <div className="sort-menu-wrap" ref={sortRef}>
+            <button
+              className={`icon-btn${sort !== DEFAULT_SNIPPET_SORT ? ' is-active' : ''}`}
+              onClick={() => setSortOpen(!sortOpen)}
+              title={`Sırala: ${SNIPPET_SORTS.find((o) => o.value === sort)?.label ?? ''}`}
+              aria-label="Sıralama"
+              aria-haspopup="menu"
+              aria-expanded={sortOpen}
+              data-testid="sort-button"
+            >
+              <ArrowDownUp size={17} />
+            </button>
+            {sortOpen && (
+              <div
+                className="sort-menu"
+                role="menu"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    setSortOpen(false)
+                  }
+                }}
+              >
+                <div className="sort-menu-title">Snippet sıralaması</div>
+                {SNIPPET_SORTS.map((o) => (
+                  <button
+                    key={o.value}
+                    role="menuitemradio"
+                    aria-checked={sort === o.value}
+                    className={`sort-menu-item${sort === o.value ? ' is-selected' : ''}`}
+                    onClick={() => {
+                      changeSort(o.value)
+                      setSortOpen(false)
+                    }}
+                    data-testid={`sort-${o.value}`}
+                  >
+                    <Check size={14} className="sort-check" />
+                    {o.label}
+                  </button>
+                ))}
+                <div className="sort-menu-hint">Snippet'leri sürükleyerek ya da Alt + ↑/↓ ile de sıralayabilirsiniz.</div>
+              </div>
+            )}
+          </div>
           <button
             className="icon-btn"
             onClick={toggleAll}
@@ -195,7 +350,14 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
         {groups.map(({ category, snippets: items }) => {
           const open = searching || !collapsed.has(category.id)
           return (
-            <div className="tree-group" key={category.id} role="group" data-testid="category">
+            <div
+              className={`tree-group${drop && !drop.snippetId && drop.categoryId === category.id ? ' is-drop-target' : ''}`}
+              key={category.id}
+              role="group"
+              data-testid="category"
+              onDragOver={(e) => onCategoryDragOver(e, category.id)}
+              onDrop={(e) => onDropAt(e, items)}
+            >
               <div className="tree-category">
                 <button
                   className="tree-category-toggle"
@@ -232,12 +394,34 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
                   {items.map((s) => {
                     const paramCount = extractParams(s.command).length
                     return (
-                      <div className="snippet" key={s.id} role="treeitem" data-testid="snippet">
+                      <div
+                        className={[
+                          'snippet',
+                          dragId === s.id ? 'is-dragging' : '',
+                          drop?.snippetId === s.id ? `drop-${drop.edge}` : ''
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        key={s.id}
+                        role="treeitem"
+                        data-testid="snippet"
+                        draggable={canReorder}
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = 'move'
+                          e.dataTransfer.setData(DRAG_TYPE, s.id)
+                          setDragId(s.id)
+                        }}
+                        onDragEnd={endDrag}
+                        onDragOver={(e) => onSnippetDragOver(e, category.id, s.id)}
+                        onDrop={(e) => onDropAt(e, items)}
+                      >
+                        {canReorder && <GripVertical size={14} className="snippet-grip" aria-hidden />}
                         <button
                           className="snippet-main"
                           onClick={() => onRun(s)}
                           title={`${s.description ? `${s.description}\n\n` : ''}${s.command}\n\nTıkla: ${targetLabel} içinde ${s.autoRun ? 'çalıştır' : 'yaz'}`}
                           data-nav-item
+                          data-snippet-id={s.id}
                           data-testid="snippet-run"
                         >
                           <Play size={13} className="snippet-play" />

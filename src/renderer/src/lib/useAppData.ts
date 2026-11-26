@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { newId } from '../../../shared/data'
 import type { AppData, Category, Settings, Snippet } from '../../../shared/types'
 
-export type SnippetDraft = Omit<Snippet, 'id' | 'updatedAt'>
+export type SnippetDraft = Omit<Snippet, 'id' | 'createdAt' | 'updatedAt'>
 
 export interface AppDataApi {
   data: AppData | null
@@ -13,6 +13,8 @@ export interface AppDataApi {
   saveSnippet(draft: SnippetDraft, id?: string): Snippet
   duplicateSnippet(id: string): void
   deleteSnippet(id: string): void
+  /** Snippet'leri verilen kimlik sırasına dizer; `moved` verilirse o snippet hedef kategoriye taşınır. */
+  reorderSnippets(order: string[], moved?: { id: string; categoryId: string }): void
   updateSettings(patch: Partial<Settings>): void
   rememberParams(snippetId: string, values: Record<string, string>): void
   replaceData(next: AppData): void
@@ -89,7 +91,9 @@ export function useAppData(onSaveError: (message: string) => void): AppDataApi {
 
   const saveSnippet = useCallback(
     (draft: SnippetDraft, id?: string): Snippet => {
-      const snippet: Snippet = { ...draft, name: draft.name.trim(), id: id ?? newId(), updatedAt: Date.now() }
+      const now = Date.now()
+      const createdAt = (id && dataRef.current?.snippets.find((s) => s.id === id)?.createdAt) || now
+      const snippet: Snippet = { ...draft, name: draft.name.trim(), id: id ?? newId(), createdAt, updatedAt: now }
       const description = draft.description?.trim()
       if (description) snippet.description = description
       else delete snippet.description
@@ -107,8 +111,12 @@ export function useAppData(onSaveError: (message: string) => void): AppDataApi {
       commit((d) => {
         const source = d.snippets.find((s) => s.id === id)
         if (!source) return d
-        const copy: Snippet = { ...source, id: newId(), name: `${source.name} (kopya)`, updatedAt: Date.now() }
-        return { ...d, snippets: [...d.snippets, copy] }
+        const now = Date.now()
+        const copy: Snippet = { ...source, id: newId(), name: `${source.name} (kopya)`, createdAt: now, updatedAt: now }
+        // Özel sırada kopya, kaynağın hemen altında görünsün.
+        const snippets = [...d.snippets]
+        snippets.splice(snippets.indexOf(source) + 1, 0, copy)
+        return { ...d, snippets }
       }),
     [commit]
   )
@@ -119,6 +127,26 @@ export function useAppData(onSaveError: (message: string) => void): AppDataApi {
         const { [id]: _removed, ...paramHistory } = d.paramHistory
         void _removed
         return { ...d, snippets: d.snippets.filter((s) => s.id !== id), paramHistory }
+      }),
+    [commit]
+  )
+
+  const reorderSnippets = useCallback(
+    (order: string[], moved?: { id: string; categoryId: string }) =>
+      commit((d) => {
+        const rank = new Map(order.map((id, i) => [id, i]))
+        const categoryIds = new Set(d.categories.map((c) => c.id))
+        const snippets = d.snippets
+          .map((s, i) => ({ s, i }))
+          // Sırada olmayanlar (beklenmez ama) eski yerlerine göre sona eklenir.
+          .sort((a, b) => (rank.get(a.s.id) ?? order.length + a.i) - (rank.get(b.s.id) ?? order.length + b.i))
+          .map(({ s }) =>
+            moved && s.id === moved.id && categoryIds.has(moved.categoryId) && s.categoryId !== moved.categoryId
+              ? { ...s, categoryId: moved.categoryId }
+              : s
+          )
+        const unchanged = snippets.every((s, i) => s === d.snippets[i])
+        return unchanged ? d : { ...d, snippets }
       }),
     [commit]
   )
@@ -145,6 +173,7 @@ export function useAppData(onSaveError: (message: string) => void): AppDataApi {
     saveSnippet,
     duplicateSnippet,
     deleteSnippet,
+    reorderSnippets,
     updateSettings,
     rememberParams,
     replaceData

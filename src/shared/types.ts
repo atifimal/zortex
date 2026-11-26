@@ -12,6 +12,8 @@ export interface Snippet {
   description?: string
   /** true ise komut gönderildikten sonra Enter basılır. */
   autoRun: boolean
+  /** Oluşturulma zamanı (ms). Eski verilerde yoksa `updatedAt` kullanılır. */
+  createdAt: number
   updatedAt: number
 }
 
@@ -19,6 +21,8 @@ export interface Settings {
   /** Seçili kabuğun kimliği; boş ise platformun varsayılanı kullanılır. */
   shellId: string
   fontSize: number
+  /** Terminalde `cd ` yazılırken klasör önerileri gösterilsin mi. */
+  cdSuggest: boolean
 }
 
 export interface AppData {
@@ -46,5 +50,6 @@ export interface ImportResult {
 
 export const DEFAULT_SETTINGS: Settings = {
   shellId: '',
-  fontSize: 14
+  fontSize: 14,
+  cdSuggest: true
 }

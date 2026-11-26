@@ -1,4 +1,5 @@
 import type { AppData, ImportResult, Platform, ShellInfo } from '../shared/types'
+import type { ShellKind } from '../shared/cd'
 
 export interface PtyCreateOptions {
   id: string
@@ -16,6 +17,12 @@ export interface ZortexApi {
     kill(id: string): void
     onData(id: string, listener: (data: string) => void): () => void
     onExit(id: string, listener: (exitCode: number) => void): () => void
+    /** Kabuğun çalışma klasörü (yalnızca macOS/Linux; bilinemiyorsa null). */
+    cwd(id: string): Promise<string | null>
+  }
+  fs: {
+    /** `cwd` içinde, yazılan `path` ile eşleşen alt klasör adları. */
+    listDirs(cwd: string, path: string, kind: ShellKind): Promise<string[]>
   }
   data: {
     load(): Promise<AppData>
@@ -42,6 +49,8 @@ export const IPC = {
   ptyKill: 'pty:kill',
   ptyData: 'pty:data',
   ptyExit: 'pty:exit',
+  ptyCwd: 'pty:cwd',
+  fsListDirs: 'fs:list-dirs',
   dataLoad: 'data:load',
   dataSave: 'data:save',
   dataExport: 'data:export',

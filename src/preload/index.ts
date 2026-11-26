@@ -35,7 +35,11 @@ const api: ZortexApi = {
     resize: (id, cols, rows) => ipcRenderer.send(IPC.ptyResize, id, cols, rows),
     kill: (id) => ipcRenderer.send(IPC.ptyKill, id),
     onData: (id, listener) => subscribe(dataListeners, id, listener),
-    onExit: (id, listener) => subscribe(exitListeners, id, listener)
+    onExit: (id, listener) => subscribe(exitListeners, id, listener),
+    cwd: (id) => ipcRenderer.invoke(IPC.ptyCwd, id)
+  },
+  fs: {
+    listDirs: (cwd, path, kind) => ipcRenderer.invoke(IPC.fsListDirs, cwd, path, kind)
   },
   data: {
     load: () => ipcRenderer.invoke(IPC.dataLoad),

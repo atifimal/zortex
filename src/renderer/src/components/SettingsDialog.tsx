@@ -64,6 +64,19 @@ export function SettingsDialog({ settings, onChange, onImport, onExport, onClose
           </label>
         </div>
 
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={settings.cdSuggest}
+            onChange={(e) => onChange({ cdSuggest: e.target.checked })}
+            data-testid="setting-cd-suggest"
+          />
+          <span>
+            <code>cd</code> yazarken klasör öner{' '}
+            <span className="muted">— ↑/↓ ile seç, Tab veya Enter ile tamamla, Esc ile kapat</span>
+          </span>
+        </label>
+
         <div className="field">
           <span className="field-label">Snippet'ler</span>
           <div className="button-row">

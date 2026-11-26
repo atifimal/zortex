@@ -58,10 +58,11 @@ interface Props {
   mountedCount: number
   shellId: string
   fontSize: number
+  cdSuggest: boolean
   onFocusPane(index: number): void
 }
 
-export function TerminalGrid({ layout, focusedIndex, mountedCount, shellId, fontSize, onFocusPane }: Props) {
+export function TerminalGrid({ layout, focusedIndex, mountedCount, shellId, fontSize, cdSuggest, onFocusPane }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [colFrac, setColFrac] = useState(() => loadPref('split.col', 0.5, isFrac))
   const [rowFrac, setRowFrac] = useState(() => loadPref('split.row', 0.5, isFrac))
@@ -118,6 +119,7 @@ export function TerminalGrid({ layout, focusedIndex, mountedCount, shellId, font
               showTargetBadge={visibleCount > 1}
               shellId={shellId}
               fontSize={fontSize}
+              cdSuggest={cdSuggest}
               onFocusRequest={onFocusPane}
             />
           </div>

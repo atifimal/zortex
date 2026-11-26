@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -176,4 +176,93 @@ test('snippet düzenlenir ve silinir', async () => {
   await edited.getByTestId('snippet-delete').click()
   await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Sil' }).click()
   await expect(page.getByTestId('snippet').filter({ hasText: 'Kısa durum' })).toHaveCount(0)
+})
+
+test('snippetler sıralanır ve sürükle-bırak ile özel sıraya dizilir', async () => {
+  // Snippet komutları da kategori adını içerebildiği için kategori başlığına göre eşleştir.
+  const category = (name: string) =>
+    page.getByTestId('category').filter({ has: page.locator('.tree-category-name', { hasText: new RegExp(`^${name}$`) }) })
+  const git = category('Git')
+  const names = (): Promise<string[]> =>
+    git.locator('.snippet-name').evaluateAll((els) => els.map((e) => e.firstChild?.textContent ?? ''))
+  await expect.poll(names).toEqual(['Commit', 'Durum', 'Yeni dal oluştur'])
+
+  await page.getByTestId('sort-button').click()
+  await page.getByTestId('sort-name-desc').click()
+  await expect.poll(names).toEqual(['Yeni dal oluştur', 'Durum', 'Commit'])
+
+  // "Commit"i en üste sürükle: sıralama özel sıraya geçer ve ekrandaki sıra korunur.
+  await git.getByTestId('snippet').filter({ hasText: 'Commit' }).dragTo(git.getByTestId('snippet').first(), {
+    targetPosition: { x: 40, y: 4 }
+  })
+  await expect.poll(names).toEqual(['Commit', 'Yeni dal oluştur', 'Durum'])
+  await page.getByTestId('sort-button').click()
+  await expect(page.getByTestId('sort-manual')).toHaveAttribute('aria-checked', 'true')
+  await page.keyboard.press('Escape')
+
+  // Başka kategoriye taşı.
+  const ag = category('Ağ')
+  await git.getByTestId('snippet').filter({ hasText: 'Durum' }).dragTo(ag.getByTestId('category-toggle'))
+  await expect(ag.getByTestId('snippet').filter({ hasText: 'Durum' })).toHaveCount(1)
+  await expect.poll(names).toEqual(['Commit', 'Yeni dal oluştur'])
+
+  // Klavye ile: Alt+↓
+  await git.getByTestId('snippet').filter({ hasText: 'Commit' }).getByTestId('snippet-run').focus()
+  await page.keyboard.press('Alt+ArrowDown')
+  await expect.poll(names).toEqual(['Yeni dal oluştur', 'Commit'])
+  await shot('07-siralama')
+
+  await expect
+    .poll(() => {
+      const saved = JSON.parse(readFileSync(join(dataDir, 'data.json'), 'utf8'))
+      const gitId = saved.categories.find((c: { name: string }) => c.name === 'Git').id
+      return saved.snippets.filter((s: { categoryId: string }) => s.categoryId === gitId).map((s: { name: string }) => s.name)
+    })
+    .toEqual(['Yeni dal oluştur', 'Commit'])
+})
+
+test('cd yazınca imlecin altında klasör önerileri çıkar ve seçilen tamamlanır', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'zortex-cd-'))
+  mkdirSync(join(root, 'alpha', 'inner'), { recursive: true })
+  mkdirSync(join(root, 'beta'))
+  writeFileSync(join(root, 'file.txt'), '')
+  try {
+    await recordOutput('pane-1')
+    await page.getByTestId('pane-1').locator('.pane-body').click()
+    await page.keyboard.type(`cd "${root}"`)
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(500)
+
+    const suggest = page.getByTestId('cd-suggest')
+    const items = suggest.getByTestId('cd-suggest-item')
+    await page.keyboard.type('cd ')
+    await expect(suggest).toBeVisible()
+    await expect(items.locator('.cd-suggest-name')).toHaveText(['.', '..', '~', 'alpha', 'beta'])
+    await shot('08-cd-oneri')
+
+    await page.keyboard.type('al')
+    await expect(items.locator('.cd-suggest-name')).toHaveText(['alpha'])
+    await page.keyboard.press('Tab')
+    // Klasöre girildi: alt klasörü listelenir.
+    await expect(items.locator('.cd-suggest-name')).toHaveText(['inner'])
+    await page.keyboard.press('ArrowDown')
+    await expect(items.first()).toHaveAttribute('aria-selected', 'true')
+    await page.keyboard.press('Enter')
+    await expect(items.locator('.cd-suggest-name')).toHaveCount(0)
+    // Seçim yokken Enter komutu çalıştırır.
+    await page.keyboard.press('Enter')
+    await expect(suggest).toBeHidden()
+
+    await page.keyboard.type('echo "[$(pwd)]"')
+    await page.keyboard.press('Enter')
+    await expect.poll(() => output('pane-1')).toMatch(/\[[^\]\r\n]*alpha[\\/]inner\]/)
+
+    // Esc listeyi kapatır.
+    await page.keyboard.type('cd ')
+    await expect(suggest).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(suggest).toBeHidden()
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

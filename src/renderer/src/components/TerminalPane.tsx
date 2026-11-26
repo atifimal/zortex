@@ -8,6 +8,9 @@ import { Crosshair, Eraser, RotateCw } from 'lucide-react'
 import { terminalTheme } from '../lib/terminalTheme'
 import { isMac, terminalFontFamily } from '../lib/platform'
 import { terminalRegistry } from '../lib/terminalRegistry'
+import { CdSuggest, type CdSuggestState } from '../lib/cdSuggest'
+import { shellKindOf } from '../../../shared/cd'
+import { CdSuggestList } from './CdSuggestList'
 
 interface Props {
   id: string
@@ -17,6 +20,7 @@ interface Props {
   showTargetBadge: boolean
   shellId: string
   fontSize: number
+  cdSuggest: boolean
   onFocusRequest(index: number): void
 }
 
@@ -27,8 +31,12 @@ interface RuntimeState {
   disposed: boolean
 }
 
-export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fontSize, onFocusRequest }: Props) {
+export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fontSize, cdSuggest, onFocusRequest }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const paneRef = useRef<HTMLElement>(null)
+  const suggestRef = useRef<CdSuggest | null>(null)
+  const cdSuggestRef = useRef(cdSuggest)
+  cdSuggestRef.current = cdSuggest
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const runtime = useRef<RuntimeState>({ exited: false, starting: false, pending: '', disposed: false })
@@ -40,6 +48,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
 
   const [shellName, setShellName] = useState('')
   const [exitCode, setExitCode] = useState<number | null>(null)
+  const [suggest, setSuggest] = useState<CdSuggestState | null>(null)
 
   const fit = useCallback(() => {
     const host = hostRef.current
@@ -89,6 +98,10 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
     termRef.current = term
     fitRef.current = fitAddon
 
+    const suggester = new CdSuggest(term, paneRef.current!, id, setSuggest)
+    suggester.enabled = cdSuggestRef.current
+    suggestRef.current = suggester
+
     const copySelection = (): void => {
       const text = term.getSelection()
       if (text) window.zortex.clipboard.writeText(text)
@@ -99,6 +112,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
     }
 
     term.attachCustomKeyEventHandler((e) => {
+      if (!suggester.handleKey(e)) return false
       if (e.type !== 'keydown') return true
       const key = e.key.toLowerCase()
       if (isMac) {
@@ -135,7 +149,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
     const onTextareaFocus = (): void => onFocusRef.current(index)
     term.textarea?.addEventListener('focus', onTextareaFocus)
 
-    const offData = window.zortex.pty.onData(id, (data) => term.write(data))
+    const offData = window.zortex.pty.onData(id, (data) => term.write(data, () => suggester.afterWrite()))
     const offExit = window.zortex.pty.onExit(id, (code) => {
       state.exited = true
       setExitCode(code)
@@ -143,6 +157,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
     })
 
     term.onData((data) => {
+      suggester.noteInput(data)
       if (state.exited) {
         if (data === '\r') startRef.current()
         return
@@ -172,6 +187,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
         state.exited = false
         setExitCode(null)
         setShellName(shell.name)
+        suggester.kind = shellKindOf(shell.id)
         // Başlatma sırasında boyut değiştiyse kabuğa bildir.
         window.zortex.pty.resize(id, term.cols, term.rows)
         if (state.pending) {
@@ -222,6 +238,9 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
       cancelAnimationFrame(frame)
       observer.disconnect()
       unregister()
+      suggester.dispose()
+      suggestRef.current = null
+      setSuggest(null)
       offData()
       offExit()
       host.removeEventListener('contextmenu', onContextMenu)
@@ -241,6 +260,13 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
     fit()
   }, [fontSize, fit])
 
+  useEffect(() => {
+    const suggester = suggestRef.current
+    if (!suggester) return
+    suggester.enabled = cdSuggest
+    if (!cdSuggest) suggester.close()
+  }, [cdSuggest])
+
   const restart = (): void => {
     const term = termRef.current
     if (!term) return
@@ -258,6 +284,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
 
   return (
     <section
+      ref={paneRef}
       className={`pane${focused ? ' is-focused' : ''}`}
       data-testid={`pane-${index + 1}`}
       data-focused={focused}
@@ -296,6 +323,15 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
         </div>
       </header>
       <div className="pane-body" ref={hostRef} />
+      {suggest && (
+        <CdSuggestList
+          state={suggest}
+          onPick={(i) => {
+            suggestRef.current?.accept(i)
+            termRef.current?.focus()
+          }}
+        />
+      )}
     </section>
   )
 }

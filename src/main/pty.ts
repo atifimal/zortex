@@ -1,5 +1,7 @@
 import os from 'node:os'
+import { basename } from 'node:path'
 import * as pty from 'node-pty'
+import { processCwd } from './dirs'
 import type { WebContents } from 'electron'
 import { resolveShell } from './shells'
 import type { ShellInfo } from '../shared/types'
@@ -7,6 +9,7 @@ import { IPC } from '../preload/api'
 
 interface Session {
   proc: pty.IPty
+  shellPath: string
   owner: WebContents
   buffer: string
   flushTimer: NodeJS.Timeout | null
@@ -40,7 +43,7 @@ export class PtyManager {
       env: buildEnv()
     })
 
-    const session: Session = { proc, owner, buffer: '', flushTimer: null }
+    const session: Session = { proc, shellPath: shell.path, owner, buffer: '', flushTimer: null }
     this.sessions.set(id, session)
 
     const flush = (): void => {
@@ -69,6 +72,18 @@ export class PtyManager {
 
   write(id: string, data: string): void {
     this.sessions.get(id)?.proc.write(data)
+  }
+
+  /**
+   * Kabuğun çalışma klasörü. Ön planda kabuk dışında bir program (ssh, python…) varsa
+   * yazılan `cd` o programa aittir; yerel klasör yanıltıcı olacağından `null` döner.
+   */
+  async cwd(id: string): Promise<string | null> {
+    const session = this.sessions.get(id)
+    if (!session || process.platform === 'win32') return null
+    const name = (p: string): string => basename(p).replace(/^-/, '')
+    if (name(session.proc.process) !== name(session.shellPath)) return null
+    return processCwd(session.proc.pid)
   }
 
   resize(id: string, cols: number, rows: number): void {

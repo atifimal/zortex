@@ -21,15 +21,16 @@ export function createDefaultData(platform: Platform): AppData {
       : 'lsof -nP -iTCP:{{port}} -sTCP:LISTEN'
 
   const snippets: Snippet[] = [
-    { id: newId(), name: 'Klasörü listele', command: listCmd, categoryId: general.id, autoRun: true, updatedAt: now },
-    { id: newId(), name: 'Dosya ara', command: findCmd, categoryId: general.id, autoRun: true, updatedAt: now },
-    { id: newId(), name: 'Durum', command: 'git status -sb', categoryId: git.id, autoRun: true, updatedAt: now },
+    { id: newId(), name: 'Klasörü listele', command: listCmd, categoryId: general.id, autoRun: true, createdAt: now, updatedAt: now },
+    { id: newId(), name: 'Dosya ara', command: findCmd, categoryId: general.id, autoRun: true, createdAt: now, updatedAt: now },
+    { id: newId(), name: 'Durum', command: 'git status -sb', categoryId: git.id, autoRun: true, createdAt: now, updatedAt: now },
     {
       id: newId(),
       name: 'Yeni dal oluştur',
       command: 'git switch -c {{dal}}',
       categoryId: git.id,
       autoRun: true,
+      createdAt: now,
       updatedAt: now
     },
     {
@@ -39,6 +40,7 @@ export function createDefaultData(platform: Platform): AppData {
       categoryId: git.id,
       description: 'İzlenen tüm değişiklikleri commit eder',
       autoRun: false,
+      createdAt: now,
       updatedAt: now
     },
     {
@@ -47,9 +49,10 @@ export function createDefaultData(platform: Platform): AppData {
       command: 'ssh {{kullanıcı}}@{{sunucu}} -p {{port:22}}',
       categoryId: network.id,
       autoRun: true,
+      createdAt: now,
       updatedAt: now
     },
-    { id: newId(), name: 'Portu kim dinliyor', command: portCmd, categoryId: network.id, autoRun: true, updatedAt: now }
+    { id: newId(), name: 'Portu kim dinliyor', command: portCmd, categoryId: network.id, autoRun: true, createdAt: now, updatedAt: now }
   ]
 
   return {
@@ -100,6 +103,8 @@ export function sanitizeData(raw: unknown): AppData {
       categoryId = fallbackCategory.id
     }
     const description = str(s.description).trim()
+    const updatedAt = typeof s.updatedAt === 'number' ? s.updatedAt : Date.now()
+    const createdAt = typeof s.createdAt === 'number' ? s.createdAt : updatedAt
     snippets.push({
       id,
       name,
@@ -107,7 +112,8 @@ export function sanitizeData(raw: unknown): AppData {
       categoryId,
       ...(description ? { description } : {}),
       autoRun: typeof s.autoRun === 'boolean' ? s.autoRun : true,
-      updatedAt: typeof s.updatedAt === 'number' ? s.updatedAt : Date.now()
+      createdAt,
+      updatedAt
     })
   }
 
@@ -130,7 +136,8 @@ export function sanitizeData(raw: unknown): AppData {
     snippets,
     settings: {
       shellId: str(rawSettings.shellId),
-      fontSize: Math.min(32, Math.max(8, Math.round(fontSize)))
+      fontSize: Math.min(32, Math.max(8, Math.round(fontSize))),
+      cdSuggest: typeof rawSettings.cdSuggest === 'boolean' ? rawSettings.cdSuggest : DEFAULT_SETTINGS.cdSuggest
     },
     paramHistory
   }
@@ -165,7 +172,8 @@ export function mergeData(current: AppData, incoming: AppData): { data: AppData;
     if (!categoryId) continue
     const duplicate = snippets.some((x) => x.categoryId === categoryId && x.name === s.name && x.command === s.command)
     if (duplicate) continue
-    snippets.push({ ...s, id: newId(), categoryId, updatedAt: Date.now() })
+    const now = Date.now()
+    snippets.push({ ...s, id: newId(), categoryId, createdAt: now, updatedAt: now })
     snippetsAdded++
   }
 

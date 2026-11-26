@@ -1,9 +1,10 @@
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { PtyManager } from './pty'
 import { DataStore, resolveDataDir } from './store'
 import { listShells } from './shells'
+import { listDirs } from './dirs'
 import { mergeData, sanitizeData } from '../shared/data'
 import type { AppData } from '../shared/types'
 import { IPC, type PtyCreateOptions } from '../preload/api'
@@ -103,6 +104,15 @@ function registerIpc(): void {
   })
   ipcMain.on(IPC.ptyKill, (event, id: unknown) => {
     if (trusted(event) && isString(id, 64)) ptys.kill(id)
+  })
+  ipcMain.handle(IPC.ptyCwd, (event, id: unknown) => {
+    if (!trusted(event)) throw new Error('untrusted')
+    return isString(id, 64) ? ptys.cwd(id) : null
+  })
+  ipcMain.handle(IPC.fsListDirs, (event, cwd: unknown, path: unknown, kind: unknown) => {
+    if (!trusted(event)) throw new Error('untrusted')
+    if (!isString(cwd, 4096) || !isString(path, 4096) || !isAbsolute(cwd)) return []
+    return listDirs(cwd, path, kind === 'pwsh' || kind === 'cmd' ? kind : 'posix')
   })
 
   ipcMain.handle(IPC.dataLoad, (event) => {

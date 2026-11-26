@@ -299,6 +299,8 @@ export function App() {
                 onNewCategory={askNewCategory}
                 onRenameCategory={askRenameCategory}
                 onDeleteCategory={askDeleteCategory}
+                onReorder={store.reorderSnippets}
+                onInfo={(message) => notify(message, 'info')}
               />
             </div>
             <div className="sidebar-resizer" onPointerDown={startSidebarResize} role="separator" aria-orientation="vertical" />
@@ -310,6 +312,7 @@ export function App() {
           mountedCount={mountedCount}
           shellId={data.settings.shellId}
           fontSize={data.settings.fontSize}
+          cdSuggest={data.settings.cdSuggest}
           onFocusPane={setFocusedIndex}
         />
       </main>

@@ -13,6 +13,7 @@ const snip = (id: string, name: string, command: string, categoryId: string): Sn
   command,
   categoryId,
   autoRun: true,
+  createdAt: 0,
   updatedAt: 0
 })
 const snippets: Snippet[] = [
