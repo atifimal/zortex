@@ -7,6 +7,7 @@ import { listShells } from './shells'
 import { mergeData, sanitizeData } from '../shared/data'
 import type { AppData } from '../shared/types'
 import { IPC, type PtyCreateOptions } from '../preload/api'
+import appIcon from '../../resources/icon.png?asset'
 
 const isMac = process.platform === 'darwin'
 const ptys = new PtyManager()
@@ -23,6 +24,8 @@ function createWindow(): void {
     title: 'Zortex',
     backgroundColor: '#0d1016',
     autoHideMenuBar: true,
+    // Windows/Linux görev çubuğu ikonu (paketlenmiş exe'de de pencere ikonu bundan gelir).
+    ...(isMac ? {} : { icon: appIcon }),
     // Başlık çubuğu uygulamanın üst şeridiyle birleşir; pencere düğmeleri işletim sistemince çizilir.
     ...(isMac
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 13 } }
@@ -210,6 +213,8 @@ if (!singleInstance) {
     store = new DataStore()
     registerIpc()
     buildMenu()
+    // Paketlenmiş macOS uygulaması .icns kullanır; geliştirmede Dock'ta Electron ikonu yerine bu görünür.
+    if (isMac && !app.isPackaged) app.dock?.setIcon(appIcon)
     createWindow()
 
     app.on('activate', () => {

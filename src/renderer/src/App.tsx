@@ -13,6 +13,7 @@ import { isAppShortcut, shortcutLabel } from './lib/platform'
 import { terminalRegistry } from './lib/terminalRegistry'
 import { extractParams, fillParams, toTerminalInput } from '../../shared/params'
 import type { Category, Snippet } from '../../shared/types'
+import appIconUrl from '../../../resources/icon.png'
 
 type Dialog =
   | { kind: 'editor'; snippet?: Snippet; categoryId?: string }
@@ -247,9 +248,7 @@ export function App() {
           >
             <PanelLeft size={16} />
           </button>
-          <span className="brand-mark" aria-hidden>
-            Z
-          </span>
+          <img className="brand-mark" src={appIconUrl} alt="" aria-hidden draggable={false} />
           <span className="brand-name">Zortex</span>
         </div>
         <div className="topbar-center">

@@ -8,6 +8,8 @@ directories:
 
 files:
   - out/**
+  # Pencere ikonu (src/main içinden ?asset ile okunur).
+  - resources/icon.png
   - package.json
   # node-pty: yalnızca çalışma zamanı dosyaları; kaynak kod ve hata ayıklama sembolleri paketlenmez.
   - "!node_modules/node-pty/{src,deps,third_party,scripts,typings,binding.gyp}"

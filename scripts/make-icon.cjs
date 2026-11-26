@@ -1,5 +1,7 @@
 // Uygulama ikonunu SVG'den üretir: `npx electron scripts/make-icon.cjs`
-// Çıktı: build/icon.png (1024x1024). electron-builder bundan .ico ve .icns üretir.
+// Çıktılar:
+//   build/icon.png     (1024x1024) electron-builder bundan .ico ve .icns üretir.
+//   resources/icon.png (256x256)   pencere/Dock ikonu ve üst şeritteki logo.
 const { app, BrowserWindow } = require('electron')
 const { writeFileSync, mkdirSync } = require('node:fs')
 const { join } = require('node:path')
@@ -46,6 +48,9 @@ app.whenReady().then(async () => {
   const out = join(__dirname, '..', 'build')
   mkdirSync(out, { recursive: true })
   writeFileSync(join(out, 'icon.png'), image.resize({ width: SIZE, height: SIZE }).toPNG())
-  console.log('build/icon.png yazıldı', image.getSize())
+  const res = join(__dirname, '..', 'resources')
+  mkdirSync(res, { recursive: true })
+  writeFileSync(join(res, 'icon.png'), image.resize({ width: 256, height: 256, quality: 'best' }).toPNG())
+  console.log('build/icon.png ve resources/icon.png yazıldı', image.getSize())
   app.quit()
 })
