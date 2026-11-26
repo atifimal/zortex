@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Download, FolderOpen, Upload } from 'lucide-react'
 import { Modal } from './Modal'
-import type { Settings, ShellInfo } from '../../../shared/types'
+import type { CompletionMode, Settings, ShellInfo } from '../../../shared/types'
 import { isMac, shortcutLabel } from '../lib/platform'
 
 interface Props {
@@ -64,16 +64,38 @@ export function SettingsDialog({ settings, onChange, onImport, onExport, onClose
           </label>
         </div>
 
+        <div className="form-row">
+          <label className="field grow">
+            <span className="field-label">Komut ve dosya önerileri</span>
+            <select
+              className="input"
+              value={settings.completion}
+              onChange={(e) => onChange({ completion: e.target.value as CompletionMode })}
+              data-testid="setting-completion"
+            >
+              <option value="auto">Yazarken göster</option>
+              <option value="tab">Yalnızca Tab / Ctrl+Space ile</option>
+              <option value="off">Kapalı</option>
+            </select>
+            <span className="field-hint">
+              ↑/↓ seç · Tab tamamla · Ctrl+Space ayrıntılı görünüm · Esc kapat. Öneri yoksa Tab kabuğun kendi tamamlamasına gider.
+            </span>
+          </label>
+        </div>
+
         <label className="checkbox">
           <input
             type="checkbox"
-            checked={settings.cdSuggest}
-            onChange={(e) => onChange({ cdSuggest: e.target.checked })}
-            data-testid="setting-cd-suggest"
+            checked={settings.shellIntegration}
+            onChange={(e) => onChange({ shellIntegration: e.target.checked })}
+            data-testid="setting-shell-integration"
           />
           <span>
-            <code>cd</code> yazarken klasör öner{' '}
-            <span className="muted">— ↑/↓ ile seç, Tab veya Enter ile tamamla, Esc ile kapat</span>
+            Kabuk entegrasyonu{' '}
+            <span className="muted">
+              — kabuk her istemde bulunduğu klasörü bildirir; öneriler özel istem temalarında ve Git Bash'te de çalışır.
+              Yeni açılan terminallerde geçerli olur.
+            </span>
           </span>
         </label>
 

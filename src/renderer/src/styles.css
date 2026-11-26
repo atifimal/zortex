@@ -863,12 +863,11 @@ body.is-resizing * {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-/* ---------- cd klasör önerisi ---------- */
+/* ---------- Terminal önerileri (komut / dosya tamamlama) ---------- */
 
-.cd-suggest {
+.completion {
   position: absolute;
   z-index: 20;
-  width: 280px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-strong);
@@ -878,7 +877,7 @@ body.is-resizing * {
   font-size: 13px;
   overflow: hidden;
 }
-.cd-suggest-head {
+.completion-head {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -886,25 +885,37 @@ body.is-resizing * {
   font-size: 11.5px;
   color: var(--muted);
   border-bottom: 1px solid var(--border);
+}
+.completion-title {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  direction: rtl; /* uzun yollarda sonu görünsün */
+  text-align: left;
 }
-.cd-suggest ul {
+.completion-count {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+.completion ul {
   list-style: none;
   margin: 0;
   padding: 4px;
-  max-height: 232px;
+  max-height: 252px;
   overflow-y: auto;
 }
-.cd-suggest ul::-webkit-scrollbar {
+.completion ul::-webkit-scrollbar {
   width: 8px;
 }
-.cd-suggest ul::-webkit-scrollbar-thumb {
+.completion ul::-webkit-scrollbar-thumb {
   background: var(--surface-3);
   border-radius: 8px;
 }
-.cd-suggest-item {
+.completion-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -914,40 +925,71 @@ body.is-resizing * {
   color: var(--text-dim);
   cursor: pointer;
 }
-.cd-suggest-item:hover {
+.completion-item:hover {
   background: var(--surface-3);
   color: var(--text);
 }
-.cd-suggest-item.is-selected {
+.completion-item.is-selected {
   background: var(--accent-soft);
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--accent-ring);
 }
-.cd-suggest-icon {
+.completion-icon {
   flex: none;
-  color: var(--accent);
-  opacity: 0.85;
+  color: var(--muted);
 }
-.cd-suggest-item.is-special .cd-suggest-icon {
+.completion-item.is-dir .completion-icon {
+  color: var(--accent);
+}
+.completion-item.is-special .completion-icon {
   color: var(--warn);
 }
-.cd-suggest-name {
+.completion-name {
   font-family: var(--font-mono);
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.cd-suggest-hint {
+.completion-item.is-dir .completion-name {
+  color: var(--text);
+}
+.completion-hint,
+.completion-detail {
   margin-left: auto;
+  padding-left: 8px;
   font-size: 11.5px;
   color: var(--muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
 }
-.cd-suggest-item.is-special + .cd-suggest-item:not(.is-special) {
+.completion-hint {
+  flex-shrink: 0;
+}
+.completion-col {
+  flex: none;
+  font: 11.5px var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.completion-col.mode {
+  width: 78px;
+}
+.completion-col.size {
+  width: 62px;
+  text-align: right;
+}
+.completion-col.date {
+  width: 118px;
+}
+.completion-item.is-special + .completion-item:not(.is-special) {
   margin-top: 5px;
   position: relative;
 }
-.cd-suggest-item.is-special + .cd-suggest-item:not(.is-special)::before {
+.completion-item.is-special + .completion-item:not(.is-special)::before {
   content: '';
   position: absolute;
   left: 4px;
@@ -955,7 +997,7 @@ body.is-resizing * {
   top: -3px;
   border-top: 1px solid var(--border);
 }
-.cd-suggest-foot {
+.completion-foot {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -963,13 +1005,27 @@ body.is-resizing * {
   font-size: 11px;
   color: var(--muted);
   border-top: 1px solid var(--border);
+  white-space: nowrap;
 }
-.cd-suggest-foot kbd {
+.completion-foot kbd {
   font-size: 10.5px;
   padding: 0 4px;
 }
-.cd-suggest-foot kbd:not(:first-child) {
-  margin-left: 6px;
+.completion-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 auto 0 6px;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+.completion-toggle:hover {
+  background: var(--surface-3);
+  color: var(--text);
 }
 .pane.is-focused {
   border-color: var(--accent);

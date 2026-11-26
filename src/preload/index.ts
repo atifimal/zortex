@@ -38,8 +38,9 @@ const api: ZortexApi = {
     onExit: (id, listener) => subscribe(exitListeners, id, listener),
     cwd: (id) => ipcRenderer.invoke(IPC.ptyCwd, id)
   },
-  fs: {
-    listDirs: (cwd, path, kind) => ipcRenderer.invoke(IPC.fsListDirs, cwd, path, kind)
+  completion: {
+    listDir: (req) => ipcRenderer.invoke(IPC.completionListDir, req),
+    commands: (req) => ipcRenderer.invoke(IPC.completionCommands, req)
   },
   data: {
     load: () => ipcRenderer.invoke(IPC.dataLoad),

@@ -8,9 +8,9 @@ import { Crosshair, Eraser, RotateCw } from 'lucide-react'
 import { terminalTheme } from '../lib/terminalTheme'
 import { isMac, terminalFontFamily } from '../lib/platform'
 import { terminalRegistry } from '../lib/terminalRegistry'
-import { CdSuggest, type CdSuggestState } from '../lib/cdSuggest'
-import { shellKindOf } from '../../../shared/cd'
-import { CdSuggestList } from './CdSuggestList'
+import { Completer, type CompletionState } from '../lib/completer'
+import { CompletionList } from './CompletionList'
+import type { CompletionMode } from '../../../shared/types'
 
 interface Props {
   id: string
@@ -20,7 +20,8 @@ interface Props {
   showTargetBadge: boolean
   shellId: string
   fontSize: number
-  cdSuggest: boolean
+  completion: CompletionMode
+  shellIntegration: boolean
   onFocusRequest(index: number): void
 }
 
@@ -31,12 +32,14 @@ interface RuntimeState {
   disposed: boolean
 }
 
-export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fontSize, cdSuggest, onFocusRequest }: Props) {
+export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fontSize, completion, shellIntegration, onFocusRequest }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const paneRef = useRef<HTMLElement>(null)
-  const suggestRef = useRef<CdSuggest | null>(null)
-  const cdSuggestRef = useRef(cdSuggest)
-  cdSuggestRef.current = cdSuggest
+  const completerRef = useRef<Completer | null>(null)
+  const completionRef = useRef(completion)
+  completionRef.current = completion
+  const integrationRef = useRef(shellIntegration)
+  integrationRef.current = shellIntegration
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const runtime = useRef<RuntimeState>({ exited: false, starting: false, pending: '', disposed: false })
@@ -48,7 +51,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
 
   const [shellName, setShellName] = useState('')
   const [exitCode, setExitCode] = useState<number | null>(null)
-  const [suggest, setSuggest] = useState<CdSuggestState | null>(null)
+  const [suggest, setSuggest] = useState<CompletionState | null>(null)
 
   const fit = useCallback(() => {
     const host = hostRef.current
@@ -98,9 +101,9 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
     termRef.current = term
     fitRef.current = fitAddon
 
-    const suggester = new CdSuggest(term, paneRef.current!, id, setSuggest)
-    suggester.enabled = cdSuggestRef.current
-    suggestRef.current = suggester
+    const suggester = new Completer(term, paneRef.current!, id, setSuggest)
+    suggester.setMode(completionRef.current)
+    completerRef.current = suggester
 
     const copySelection = (): void => {
       const text = term.getSelection()
@@ -181,13 +184,14 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
           id,
           cols: term.cols,
           rows: term.rows,
-          shellId: shellIdRef.current
+          shellId: shellIdRef.current,
+          integration: integrationRef.current
         })
         if (state.disposed) return
         state.exited = false
         setExitCode(null)
         setShellName(shell.name)
-        suggester.kind = shellKindOf(shell.id)
+        suggester.setShell(shell)
         // Başlatma sırasında boyut değiştiyse kabuğa bildir.
         window.zortex.pty.resize(id, term.cols, term.rows)
         if (state.pending) {
@@ -216,6 +220,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
 
     const unregister = terminalRegistry.register(id, {
       send(text) {
+        suggester.noteInput(text)
         if (state.exited) {
           state.pending = text
           void start()
@@ -239,7 +244,7 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
       observer.disconnect()
       unregister()
       suggester.dispose()
-      suggestRef.current = null
+      completerRef.current = null
       setSuggest(null)
       offData()
       offExit()
@@ -261,11 +266,8 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
   }, [fontSize, fit])
 
   useEffect(() => {
-    const suggester = suggestRef.current
-    if (!suggester) return
-    suggester.enabled = cdSuggest
-    if (!cdSuggest) suggester.close()
-  }, [cdSuggest])
+    completerRef.current?.setMode(completion)
+  }, [completion])
 
   const restart = (): void => {
     const term = termRef.current
@@ -324,12 +326,13 @@ export function TerminalPane({ id, index, focused, showTargetBadge, shellId, fon
       </header>
       <div className="pane-body" ref={hostRef} />
       {suggest && (
-        <CdSuggestList
+        <CompletionList
           state={suggest}
           onPick={(i) => {
-            suggestRef.current?.accept(i)
+            completerRef.current?.accept(i)
             termRef.current?.focus()
           }}
+          onToggleDetails={() => completerRef.current?.toggleDetails()}
         />
       )}
     </section>

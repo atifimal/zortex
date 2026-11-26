@@ -4,10 +4,12 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell, type IpcMa
 import { PtyManager } from './pty'
 import { DataStore, resolveDataDir } from './store'
 import { listShells } from './shells'
-import { listDirs } from './dirs'
+import { listCommands, listDir } from './completion'
+import { installShellIntegration } from './shellIntegration'
 import { mergeData, sanitizeData } from '../shared/data'
 import type { AppData } from '../shared/types'
 import { IPC, type PtyCreateOptions } from '../preload/api'
+import type { CommandsRequest, ListDirRequest } from './completion'
 import appIcon from '../../resources/icon.png?asset'
 
 const isMac = process.platform === 'darwin'
@@ -93,8 +95,8 @@ function registerIpc(): void {
   ipcMain.handle(IPC.ptyCreate, (event, opts: PtyCreateOptions) => {
     if (!trusted(event)) throw new Error('untrusted')
     if (!isString(opts?.id, 64) || !isDim(opts.cols) || !isDim(opts.rows)) throw new Error('Geçersiz terminal isteği')
-    const shellInfo = ptys.create(event.sender, opts.id, opts.cols, opts.rows, isString(opts.shellId, 512) ? opts.shellId : '')
-    return { shell: shellInfo }
+    const shellId = isString(opts.shellId, 512) ? opts.shellId : ''
+    return ptys.create(event.sender, opts.id, opts.cols, opts.rows, shellId, opts.integration === true)
   })
   ipcMain.on(IPC.ptyWrite, (event, id: unknown, data: unknown) => {
     if (trusted(event) && isString(id, 64) && isString(data)) ptys.write(id, data)
@@ -109,10 +111,22 @@ function registerIpc(): void {
     if (!trusted(event)) throw new Error('untrusted')
     return isString(id, 64) ? ptys.cwd(id) : null
   })
-  ipcMain.handle(IPC.fsListDirs, (event, cwd: unknown, path: unknown, kind: unknown) => {
+  ipcMain.handle(IPC.completionListDir, (event, req: ListDirRequest) => {
     if (!trusted(event)) throw new Error('untrusted')
-    if (!isString(cwd, 4096) || !isString(path, 4096) || !isAbsolute(cwd)) return []
-    return listDirs(cwd, path, kind === 'pwsh' || kind === 'cmd' ? kind : 'posix')
+    if (!isString(req?.cwd, 4096) || !isString(req.dir, 4096) || (req.cwd !== '' && !isAbsolute(req.cwd))) return { path: '', entries: [] }
+    return listDir({ cwd: req.cwd, dir: req.dir, msysRoot: isString(req.msysRoot, 4096) ? req.msysRoot : null })
+  })
+  ipcMain.handle(IPC.completionCommands, (event, req: CommandsRequest) => {
+    if (!trusted(event)) throw new Error('untrusted')
+    if (!isString(req?.shellPath, 4096)) return []
+    const shellPath = listShells().find((s) => s.path === req.shellPath)?.path
+    return listCommands({
+      kind: req.kind === 'pwsh' || req.kind === 'cmd' ? req.kind : 'posix',
+      // Yalnızca bilinen kabuklar çalıştırılır (PowerShell cmdlet listesi için).
+      shellPath: shellPath ?? '',
+      pathEnv: isString(req.pathEnv, 100_000) ? req.pathEnv : null,
+      msysRoot: isString(req.msysRoot, 4096) ? req.msysRoot : null
+    })
   })
 
   ipcMain.handle(IPC.dataLoad, (event) => {
@@ -221,6 +235,7 @@ if (!singleInstance) {
 
   void app.whenReady().then(() => {
     store = new DataStore()
+    installShellIntegration(app.getPath('userData'))
     registerIpc()
     buildMenu()
     // Paketlenmiş macOS uygulaması .icns kullanır; geliştirmede Dock'ta Electron ikonu yerine bu görünür.

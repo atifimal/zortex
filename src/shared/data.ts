@@ -137,7 +137,12 @@ export function sanitizeData(raw: unknown): AppData {
     settings: {
       shellId: str(rawSettings.shellId),
       fontSize: Math.min(32, Math.max(8, Math.round(fontSize))),
-      cdSuggest: typeof rawSettings.cdSuggest === 'boolean' ? rawSettings.cdSuggest : DEFAULT_SETTINGS.cdSuggest
+      completion:
+        rawSettings.completion === 'auto' || rawSettings.completion === 'tab' || rawSettings.completion === 'off'
+          ? rawSettings.completion
+          : DEFAULT_SETTINGS.completion,
+      shellIntegration:
+        typeof rawSettings.shellIntegration === 'boolean' ? rawSettings.shellIntegration : DEFAULT_SETTINGS.shellIntegration
     },
     paramHistory
   }

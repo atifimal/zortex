@@ -1,7 +1,8 @@
 import os from 'node:os'
 import { basename } from 'node:path'
 import * as pty from 'node-pty'
-import { processCwd } from './dirs'
+import { processCwd } from './completion'
+import { applyShellIntegration } from './shellIntegration'
 import type { WebContents } from 'electron'
 import { resolveShell } from './shells'
 import type { ShellInfo } from '../shared/types'
@@ -32,15 +33,23 @@ function buildEnv(): Record<string, string> {
 export class PtyManager {
   private sessions = new Map<string, Session>()
 
-  create(owner: WebContents, id: string, cols: number, rows: number, shellId: string): ShellInfo {
+  create(
+    owner: WebContents,
+    id: string,
+    cols: number,
+    rows: number,
+    shellId: string,
+    integration: boolean
+  ): { shell: ShellInfo; integrated: boolean } {
     this.kill(id)
     const shell = resolveShell(shellId)
-    const proc = pty.spawn(shell.path, shell.args, {
+    const launch = integration ? applyShellIntegration(shell, buildEnv()) : { args: shell.args, env: buildEnv(), integrated: false }
+    const proc = pty.spawn(shell.path, launch.args, {
       name: 'xterm-256color',
       cols: Math.max(2, cols),
       rows: Math.max(1, rows),
       cwd: os.homedir(),
-      env: buildEnv()
+      env: launch.env
     })
 
     const session: Session = { proc, shellPath: shell.path, owner, buffer: '', flushTimer: null }
@@ -67,7 +76,7 @@ export class PtyManager {
       if (!owner.isDestroyed()) owner.send(IPC.ptyExit, id, exitCode)
     })
 
-    return shell
+    return { shell, integrated: launch.integrated }
   }
 
   write(id: string, data: string): void {

@@ -21,9 +21,16 @@ export interface Settings {
   /** Seçili kabuğun kimliği; boş ise platformun varsayılanı kullanılır. */
   shellId: string
   fontSize: number
-  /** Terminalde `cd ` yazılırken klasör önerileri gösterilsin mi. */
-  cdSuggest: boolean
+  /**
+   * Terminalde komut/dosya önerileri:
+   * `auto` yazarken açılır, `tab` yalnızca Tab / Ctrl+Space ile açılır, `off` kapalı.
+   */
+  completion: CompletionMode
+  /** Kabuğa, klasör ve istem bilgisini bildiren küçük bir entegrasyon betiği yüklensin mi. */
+  shellIntegration: boolean
 }
+
+export type CompletionMode = 'auto' | 'tab' | 'off'
 
 export interface AppData {
   version: 1
@@ -51,5 +58,6 @@ export interface ImportResult {
 export const DEFAULT_SETTINGS: Settings = {
   shellId: '',
   fontSize: 14,
-  cdSuggest: true
+  completion: 'auto',
+  shellIntegration: true
 }

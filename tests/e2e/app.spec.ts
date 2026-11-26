@@ -221,37 +221,44 @@ test('snippetler sıralanır ve sürükle-bırak ile özel sıraya dizilir', asy
     .toEqual(['Yeni dal oluştur', 'Commit'])
 })
 
-test('cd yazınca imlecin altında klasör önerileri çıkar ve seçilen tamamlanır', async () => {
+/** Testler için geçici bir klasör ağacı oluşturur ve 1. terminalde o klasöre geçer. */
+async function enterTempTree(): Promise<string> {
   const root = mkdtempSync(join(tmpdir(), 'zortex-cd-'))
   mkdirSync(join(root, 'alpha', 'inner'), { recursive: true })
   mkdirSync(join(root, 'beta'))
-  writeFileSync(join(root, 'file.txt'), '')
-  try {
-    await recordOutput('pane-1')
-    await page.getByTestId('pane-1').locator('.pane-body').click()
-    await page.keyboard.type(`cd "${root}"`)
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(500)
+  mkdirSync(join(root, '.hidden'))
+  writeFileSync(join(root, 'notes.txt'), 'zortex-dosya-icerigi\n')
+  await recordOutput('pane-1')
+  await page.getByTestId('pane-1').locator('.pane-body').click()
+  await page.keyboard.type(`cd "${root}"`)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(600)
+  return root
+}
 
-    const suggest = page.getByTestId('cd-suggest')
-    const items = suggest.getByTestId('cd-suggest-item')
+const completion = (): ReturnType<Page['getByTestId']> => page.getByTestId('completion')
+const names = (): ReturnType<Page['getByTestId']> => completion().getByTestId('completion-name')
+
+test('cd yazınca imlecin altında klasör önerileri çıkar ve seçilen tamamlanır', async () => {
+  const root = await enterTempTree()
+  try {
     await page.keyboard.type('cd ')
-    await expect(suggest).toBeVisible()
-    await expect(items.locator('.cd-suggest-name')).toHaveText(['.', '..', '~', 'alpha', 'beta'])
+    await expect(completion()).toBeVisible()
+    await expect(names()).toHaveText(['.', '..', '~', 'alpha', 'beta'])
     await shot('08-cd-oneri')
 
     await page.keyboard.type('al')
-    await expect(items.locator('.cd-suggest-name')).toHaveText(['alpha'])
+    await expect(names()).toHaveText(['alpha'])
     await page.keyboard.press('Tab')
     // Klasöre girildi: alt klasörü listelenir.
-    await expect(items.locator('.cd-suggest-name')).toHaveText(['inner'])
+    await expect(names()).toHaveText(['inner'])
     await page.keyboard.press('ArrowDown')
-    await expect(items.first()).toHaveAttribute('aria-selected', 'true')
+    await expect(completion().getByTestId('completion-item').first()).toHaveAttribute('aria-selected', 'true')
     await page.keyboard.press('Enter')
-    await expect(items.locator('.cd-suggest-name')).toHaveCount(0)
+    await expect(names()).toHaveCount(0)
     // Seçim yokken Enter komutu çalıştırır.
     await page.keyboard.press('Enter')
-    await expect(suggest).toBeHidden()
+    await expect(completion()).toBeHidden()
 
     await page.keyboard.type('echo "[$(pwd)]"')
     await page.keyboard.press('Enter')
@@ -259,9 +266,51 @@ test('cd yazınca imlecin altında klasör önerileri çıkar ve seçilen tamaml
 
     // Esc listeyi kapatır.
     await page.keyboard.type('cd ')
-    await expect(suggest).toBeVisible()
+    await expect(completion()).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(suggest).toBeHidden()
+    await expect(completion()).toBeHidden()
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('komut adları ve dosyalar önerilir; Ctrl+Space ayrıntılı görünümü açar', async () => {
+  const root = await enterTempTree()
+  try {
+    // Komut adı: Windows'ta PowerShell cmdlet'i, macOS'ta kabuğun yerleşik komutu.
+    const [typed, expected] = process.platform === 'win32' ? ['Get-ChildIt', 'Get-ChildItem'] : ['ech', 'echo']
+    await page.keyboard.type(typed)
+    await expect(names().filter({ hasText: new RegExp(`^${expected}$`) })).toHaveCount(1, { timeout: 30_000 })
+    await shot('09-komut-oneri')
+    // Yazılanı sil.
+    for (let i = 0; i < typed.length; i++) await page.keyboard.press('Backspace')
+    await expect(completion()).toBeHidden()
+
+    // Dosya argümanı: yazınca eşleşen dosyalar çıkar.
+    await page.keyboard.type('cat no')
+    await expect(names()).toHaveText(['notes.txt'])
+    // Ayrıntılı görünüm: izinler, boyut, tarih ve gizli dosyalar.
+    await page.keyboard.press('Control+Space')
+    await expect(completion()).toHaveClass(/is-detailed/)
+    await page.keyboard.press('Backspace')
+    await page.keyboard.press('Backspace')
+    await expect(names()).toHaveText(['.hidden', 'alpha', 'beta', 'notes.txt'])
+    await expect(completion().locator('.completion-col.size').last()).toHaveText('21 B')
+    await shot('10-ayrintili')
+    await page.keyboard.press('Control+Space')
+    await expect(completion()).not.toHaveClass(/is-detailed/)
+    await expect(names()).toHaveText(['alpha', 'beta', 'notes.txt'])
+
+    // Esc ile kapatılan satırda otomatik açılmaz; Tab ile açılır ve tek eşleşme doğrudan tamamlanır.
+    await page.keyboard.press('Escape')
+    await page.keyboard.type('n')
+    await expect(completion()).toBeHidden()
+    // Yankı gelmeden basılan Tab da son yazılanı görür.
+    await page.keyboard.press('Tab')
+    await expect.poll(() => output('pane-1')).toContain('otes.txt')
+    await expect(completion()).toBeHidden()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => output('pane-1')).toContain('zortex-dosya-icerigi')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -312,7 +312,8 @@ export function App() {
           mountedCount={mountedCount}
           shellId={data.settings.shellId}
           fontSize={data.settings.fontSize}
-          cdSuggest={data.settings.cdSuggest}
+          completion={data.settings.completion}
+          shellIntegration={data.settings.shellIntegration}
           onFocusPane={setFocusedIndex}
         />
       </main>

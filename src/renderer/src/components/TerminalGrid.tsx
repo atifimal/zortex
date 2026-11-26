@@ -1,3 +1,4 @@
+import type { CompletionMode } from '../../../shared/types'
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { TerminalPane } from './TerminalPane'
 import { loadPref, savePref } from '../lib/storage'
@@ -58,11 +59,12 @@ interface Props {
   mountedCount: number
   shellId: string
   fontSize: number
-  cdSuggest: boolean
+  completion: CompletionMode
+  shellIntegration: boolean
   onFocusPane(index: number): void
 }
 
-export function TerminalGrid({ layout, focusedIndex, mountedCount, shellId, fontSize, cdSuggest, onFocusPane }: Props) {
+export function TerminalGrid({ layout, focusedIndex, mountedCount, shellId, fontSize, completion, shellIntegration, onFocusPane }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [colFrac, setColFrac] = useState(() => loadPref('split.col', 0.5, isFrac))
   const [rowFrac, setRowFrac] = useState(() => loadPref('split.row', 0.5, isFrac))
@@ -119,7 +121,8 @@ export function TerminalGrid({ layout, focusedIndex, mountedCount, shellId, font
               showTargetBadge={visibleCount > 1}
               shellId={shellId}
               fontSize={fontSize}
-              cdSuggest={cdSuggest}
+              completion={completion}
+              shellIntegration={shellIntegration}
               onFocusRequest={onFocusPane}
             />
           </div>

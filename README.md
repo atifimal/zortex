@@ -14,6 +14,14 @@ A portable terminal for **Windows and macOS** with parameterized snippets and a 
   - The dialog shows a live preview of the final command.
 - **Insert parameter button**: Inserts `{{}}` in the editor and places the cursor right in the middle. If text is selected, it wraps the selection. Shortcut: `Ctrl/⌘+Shift+P`.
 - **Categories**: Collapsible tree view with a snippet count per category, plus rename and delete.
+- **Sorting**: Sort snippets by name (A→Z / Z→A), date added or last edited, or arrange them by **drag and drop** (also `Alt+↑/↓`). Dragging onto another category moves the snippet there.
+- **Command and file completion** in the terminal:
+  - Typing a command shows matching programs from `PATH`, shell built-ins and, in PowerShell, cmdlets and aliases.
+  - Arguments show matching files and folders; after `cd`, only folders, with `.`, `..` and `~` at the top.
+  - `↑/↓` select, `Tab` completes (a single match completes directly), `Esc` closes. If there is nothing to suggest, `Tab` goes to the shell's own completion.
+  - `Ctrl+Space` toggles a detailed view (like `ls -al`: permissions, size, date, hidden files).
+  - Settings: show while typing, only on `Tab` / `Ctrl+Space`, or off.
+- **Shell integration**: A small script reports the current folder and prompt position to Zortex on every prompt (PowerShell, cmd, zsh, bash, Git Bash, fish). Your own profile files load as usual and the prompt looks the same. It can be turned off in Settings.
 - **Search**:
   - Searches snippet names, commands, descriptions and category names.
   - Ignores case and Turkish diacritics (typing `baglanti` finds `bağlantı`).
@@ -108,9 +116,9 @@ The macOS package can only be built on macOS. The `.github/workflows/build.yml` 
 
 ```text
 src/
-  main/       Electron main process: window, PTY sessions (node-pty), shell detection, storage, IPC
+  main/       Electron main process: window, PTY sessions (node-pty), shell detection and integration, completion data, storage, IPC
   preload/    Narrow, secure API exposed to the renderer (contextIsolation + sandbox)
-  shared/     Platform-independent logic: parameter parsing, search, data validation
+  shared/     Platform-independent logic: parameter parsing, search, sorting, command-line parsing, data validation
   renderer/   React UI: sidebar, terminal grid (xterm.js), dialogs
 resources/    Runtime assets (window icon)
 tests/
@@ -131,3 +139,8 @@ tests/
 - **Data safety**:
   - Data is first written to a temporary file and then moved into place.
   - A corrupted data file is never deleted; it is backed up as `data.corrupt-*.json`.
+- **Completion and shell integration**:
+  - On every prompt, the shell writes invisible OSC sequences: `OSC 6973;cwd`, `OSC 6973;path` and `OSC 6973;prompt` (Zortex-specific), plus the standard `OSC 133;A/B/C/D`.
+  - How the integration is loaded: zsh via `ZDOTDIR`, bash via `--init-file`, fish via `--init-command`, PowerShell via `-EncodedCommand` (so execution policy does not block it), and cmd via `PROMPT`.
+  - ConPTY on Windows can deliver OSC sequences ahead of the text that precedes them, so the input start is found from the prompt text (PowerShell, cmd) rather than from where the sequence arrived. Unix shells mark it with `133;B`.
+  - Without integration (e.g. WSL), only default PowerShell/cmd prompts and `cd` are recognised.
