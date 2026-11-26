@@ -40,7 +40,8 @@ const api: ZortexApi = {
   },
   completion: {
     listDir: (req) => ipcRenderer.invoke(IPC.completionListDir, req),
-    commands: (req) => ipcRenderer.invoke(IPC.completionCommands, req)
+    commands: (req) => ipcRenderer.invoke(IPC.completionCommands, req),
+    exec: (req) => ipcRenderer.invoke(IPC.completionExec, req)
   },
   data: {
     load: () => ipcRenderer.invoke(IPC.dataLoad),

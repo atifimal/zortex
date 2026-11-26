@@ -1,15 +1,20 @@
+/// <reference types="@withfig/autocomplete-types" />
 import type { IDisposable, IMarker, Terminal } from '@xterm/xterm'
 import { builtinCommands, type CommandEntry } from '../../../shared/builtins'
 import {
   CD_COMMANDS,
   commandKey,
   guessInput,
+  insertionKeys,
   isPathLike,
   parseCommandLine,
   replacementKeys,
   splitPath,
+  type Insertion,
   type Word
 } from '../../../shared/cmdline'
+import { resolveSpec, type SpecContext, type SpecSuggestionKind } from './specs/engine'
+import { hasSpec, loadSpec } from './specs/registry'
 import {
   cwdFromOsc,
   cwdFromPrompt,
@@ -23,7 +28,7 @@ import type { CompletionMode, ShellInfo } from '../../../shared/types'
 import type { FsEntry } from '../../../preload/api'
 import { loadPref, savePref } from './storage'
 
-export type CompletionItemKind = 'special' | 'dir' | 'file' | CommandEntry['kind']
+export type CompletionItemKind = 'special' | 'dir' | 'file' | CommandEntry['kind'] | SpecSuggestionKind
 
 export interface CompletionItem {
   name: string
@@ -31,15 +36,19 @@ export interface CompletionItem {
   isDir: boolean
   /** Yazılan klasör kısmı korunarak mı eklenir (yol öğeleri). */
   keepDir: boolean
+  /** Açıklama (spec) ya da ayrıntı (takma ad hedefi, program yolu). */
   detail?: string
   entry?: FsEntry
+  /** Spec önerisi: nasıl yazılacağı. */
+  insert?: Omit<Insertion, 'nextChar'>
+  isDangerous?: boolean
 }
 
 export interface CompletionState {
   items: CompletionItem[]
   /** Klavyeyle seçili öğe; -1 ise seçim yok (Enter komutu çalıştırır). */
   selected: number
-  source: 'path' | 'command'
+  source: 'path' | 'command' | 'spec'
   /** Başlıkta gösterilen klasör yolu ya da açıklama. */
   title: string
   details: boolean
@@ -51,7 +60,9 @@ export interface CompletionState {
 
 type Trigger = 'auto' | 'manual'
 type Outcome = 'shown' | 'empty' | 'stale'
-type Plan = { type: 'path'; dirsOnly: boolean; execOnly: boolean; specials: boolean } | { type: 'command' }
+type PathPlan = { type: 'path'; dirsOnly: boolean; execOnly: boolean; specials: boolean }
+type Plan = PathPlan | { type: 'command' } | { type: 'spec'; command: string; tokens: string[] }
+type Result = { items: CompletionItem[]; title: string; source: CompletionState['source'] }
 
 const INPUT_WINDOW_MS = 1500
 const DIR_CACHE_MS = 2000
@@ -111,6 +122,7 @@ export class Completer {
   private scheduled = 0
   private dirCache = new Map<string, { at: number; value: Promise<{ path: string; entries: FsEntry[] }> }>()
   private commandCache: { key: string; at: number; value: Promise<CommandEntry[]> } | null = null
+  private generatorCache: SpecContext['cache'] = new Map()
   private disposables: IDisposable[] = []
   private disposed = false
 
@@ -206,6 +218,8 @@ export class Completer {
       this.oscCwd = null
       this.processCwd = null
       this.dismissedRow = null
+      // Komut dalları, betikleri vb. değiştirmiş olabilir.
+      this.generatorCache.clear()
       this.close()
     }
   }
@@ -310,12 +324,14 @@ export class Completer {
   private acceptItem(item: CompletionItem, word: Word): void {
     const buf = this.term.buffer.active
     const nextChar = buf.getLine(buf.baseY + buf.cursorY)?.getCell(buf.cursorX)?.getChars()
-    const keys = replacementKeys(
-      word,
-      { name: item.name, isDir: item.isDir, keepDir: item.keepDir, nextChar },
-      this.kind,
-      window.zortex.platform
-    )
+    const keys = item.insert
+      ? insertionKeys(word, { ...item.insert, nextChar }, this.kind)
+      : replacementKeys(
+          word,
+          { name: item.name, isDir: item.isDir, keepDir: item.keepDir, nextChar },
+          this.kind,
+          window.zortex.platform
+        )
     window.zortex.pty.write(this.ptyId, keys)
     this.lastInputAt = Date.now()
     if (item.isDir) {
@@ -550,17 +566,92 @@ export class Completer {
         (entry): CompletionItem => ({ name: entry.name, kind: entry.isDir ? 'dir' : 'file', isDir: entry.isDir, keepDir: true, entry })
       )
     ]
-    return { items, title: listing.path }
+    return { items, title: listing.path, source: 'path' as const }
   }
 
-  private async commandItems(word: Word) {
+  /** Spec üreticileri için komut çalıştırır (kabuğun klasöründe ve PATH'iyle). */
+  private exec(cwd: string): Fig.ExecuteCommandFunction {
+    const shellCommand = window.zortex.platform === 'win32' ? 'bash' : 'sh'
+    return async (input: Fig.ExecuteCommandInput | string) => {
+      // Eski spec'ler komutu tek dize olarak verir.
+      const req = typeof input === 'string' ? { command: shellCommand, args: ['-c', input] } : input
+      return window.zortex.completion
+        .exec({
+          command: req.command,
+          args: req.args ?? [],
+          cwd: req.cwd ?? cwd,
+          // Git Bash'in PATH'i MSYS biçimindedir; uygulamanınki kullanılır.
+          pathEnv: this.msys ? null : this.pathEnv,
+          timeout: 'timeout' in req ? req.timeout : undefined
+        })
+        .catch(() => ({ stdout: '', stderr: '', status: 1 }))
+    }
+  }
+
+  /**
+   * Spec'li komutlar (git, npm, docker, winget…): alt komut, seçenek ve değer önerileri.
+   * @returns undefined: spec bu konum hakkında bir şey bilmiyor, düz dosya önerisine dönülür.
+   */
+  private async specItems(
+    word: Word,
+    plan: Extract<Plan, { type: 'spec' }>,
+    prompt: string,
+    seq: number,
+    manual: boolean
+  ): Promise<Result | null | undefined> {
+    // PowerShell'de `ls`, `curl` gibi adlar cmdlet takma adıdır; Unix aracının spec'i uygulanmaz.
+    if (this.kind === 'pwsh') {
+      const entry = (await this.commands()).find((c) => c.name.toLowerCase() === plan.command)
+      if (entry && entry.kind !== 'exec') return undefined
+    }
+    const spec = await loadSpec(plan.command)
+    if (!spec) return undefined
+    const cwd = (await this.cwd(prompt)) ?? ''
+    if (seq !== this.seq) return null
+    const ctx: SpecContext = {
+      tokens: plan.tokens,
+      cwd,
+      exec: this.exec(cwd),
+      loadSpec,
+      shellCommand: window.zortex.platform === 'win32' ? 'bash' : 'sh',
+      cache: this.generatorCache
+    }
+    const res = await resolveSpec(spec, ctx).catch(() => null)
+    if (!res) return undefined
+    if (res.expectsCommand) return this.commandItems(word)
+    if (res.unknown && !res.template.filepaths && !res.template.folders) return undefined
+
+    const items: CompletionItem[] = res.suggestions.map((s) => ({
+      name: s.name,
+      kind: s.kind,
+      isDir: !!s.isDir,
+      keepDir: false,
+      detail: s.description,
+      isDangerous: s.isDangerous,
+      insert: { text: s.insert, raw: s.raw, suffix: s.suffix, cursorBack: s.cursorBack, queryTerm: res.queryTerm }
+    }))
+    // Otomatik modda boş sözcükte yalnızca dosya listesi açılmaz (her boşlukta liste açılmasın).
+    const wantsPaths = (res.template.filepaths || res.template.folders) && !res.queryTerm && (word.value !== '' || manual)
+    if (wantsPaths) {
+      const paths = await this.pathItems(
+        word,
+        { type: 'path', dirsOnly: !res.template.filepaths, execOnly: false, specials: false },
+        prompt,
+        seq
+      )
+      if (paths) items.push(...paths.items)
+    }
+    return { items, title: plan.tokens.slice(0, -1).join(' '), source: 'spec' }
+  }
+
+  private async commandItems(word: Word): Promise<Result> {
     const lower = word.value.toLowerCase()
     const list = await this.commands()
     const items = list
       .filter((c) => c.name.toLowerCase().startsWith(lower))
       .sort((a, b) => Number(b.name.toLowerCase() === lower) - Number(a.name.toLowerCase() === lower))
       .map((c): CompletionItem => ({ name: c.name, kind: c.kind, isDir: false, keepDir: false, detail: c.detail }))
-    return { items, title: 'Komutlar' }
+    return { items, title: 'Komutlar', source: 'command' }
   }
 
   private plan(trigger: Trigger, text: string): { word: Word; plan: Plan } | null {
@@ -572,12 +663,26 @@ export class Completer {
       if (isPathLike(word.value)) return { word, plan: { type: 'path', dirsOnly: false, execOnly: true, specials: false } }
       return word.value || manual ? { word, plan: { type: 'command' } } : null
     }
-    // Seçenekler (`-a`, `--force`) henüz önerilmiyor; Tab kabuğun kendi tamamlamasına gider.
-    if (word.value.startsWith('-')) return null
-    if (CD_COMMANDS.has(commandKey(parsed.command.value))) {
+    const command = commandKey(parsed.command.value)
+    if (CD_COMMANDS.has(command)) {
       return { word, plan: { type: 'path', dirsOnly: true, execOnly: false, specials: true } }
     }
+    if (hasSpec(command, this.kind)) {
+      const tokens = [parsed.command.value, ...parsed.args.map((a) => a.value), word.value]
+      return { word, plan: { type: 'spec', command, tokens } }
+    }
+    // Spec'i olmayan komutlarda seçenekler bilinmez; Tab kabuğun kendi tamamlamasına gider.
+    if (word.value.startsWith('-')) return null
     return word.value || manual ? { word, plan: { type: 'path', dirsOnly: false, execOnly: false, specials: false } } : null
+  }
+
+  private async items(word: Word, plan: Plan, prompt: string, seq: number, manual: boolean): Promise<Result | null> {
+    if (plan.type === 'command') return this.commandItems(word)
+    if (plan.type === 'path') return this.pathItems(word, plan, prompt, seq)
+    const result = await this.specItems(word, plan, prompt, seq, manual)
+    if (result !== undefined) return result
+    if (word.value.startsWith('-') || !(word.value || manual)) return null
+    return this.pathItems(word, { type: 'path', dirsOnly: false, execOnly: false, specials: false }, prompt, seq)
   }
 
   private async evaluate(trigger: Trigger): Promise<Outcome> {
@@ -604,8 +709,7 @@ export class Completer {
     if (!input || !planned) return fail()
     const { word, plan } = planned
 
-    const result =
-      plan.type === 'path' ? await this.pathItems(word, plan, input.prompt, seq) : await this.commandItems(word)
+    const result = await this.items(word, plan, input.prompt, seq, manual)
     if (seq !== this.seq || this.disposed) return 'stale'
     if (!result) return fail()
     let items = result.items
@@ -625,11 +729,11 @@ export class Completer {
     const previous = this.state && this.state.selected >= 0 ? this.state.items[this.state.selected]?.name : undefined
     const selected = previous ? items.findIndex((i) => i.name === previous) : -1
     this.word = word
-    const width = this.details ? 600 : 360
+    const width = this.details ? 640 : result.source === 'spec' ? 460 : 360
     this.update({
       items,
       selected,
-      source: plan.type,
+      source: result.source,
       title: result.title,
       details: this.details,
       width,

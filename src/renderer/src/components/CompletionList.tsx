@@ -2,15 +2,18 @@ import { useEffect, useRef } from 'react'
 import {
   AtSign,
   Braces,
+  ChevronsRight,
   CornerLeftUp,
   Dot,
   File,
   FileCode,
+  Flag,
   Folder,
   FolderSymlink,
   House,
   SquareFunction,
   SquareTerminal,
+  Tag,
   TerminalSquare,
   type LucideIcon
 } from 'lucide-react'
@@ -33,6 +36,9 @@ const KIND_LABEL: Partial<Record<CompletionItem['kind'], string>> = {
 
 function iconFor(item: CompletionItem): LucideIcon {
   if (item.kind === 'special') return SPECIAL[item.name]?.Icon ?? Folder
+  if (item.kind === 'subcommand') return ChevronsRight
+  if (item.kind === 'option') return Flag
+  if (item.kind === 'value') return item.isDir ? Folder : Tag
   if (item.entry?.isLink && item.isDir) return FolderSymlink
   if (item.isDir) return Folder
   if (item.kind === 'file') return item.entry?.isExec ? FileCode : File
@@ -46,6 +52,7 @@ function iconFor(item: CompletionItem): LucideIcon {
 /** Sade görünümde sağda gösterilen kısa bilgi. */
 function hintFor(item: CompletionItem): string {
   if (item.kind === 'special') return SPECIAL[item.name]?.label ?? ''
+  if (item.insert) return item.detail ?? ''
   if (item.entry) return item.isDir ? '' : formatSize(item.entry.size)
   if (item.kind === 'alias' && item.detail) return `→ ${item.detail}`
   return KIND_LABEL[item.kind] ?? ''
@@ -79,7 +86,7 @@ export function CompletionList({ state, onPick, onToggleDetails }: Props) {
       data-testid="completion"
     >
       <div className="completion-head" title={state.title}>
-        {state.source === 'path' ? <Folder size={12} /> : <SquareTerminal size={12} />}
+        {state.source === 'path' ? <Folder size={12} /> : state.source === 'spec' ? <ChevronsRight size={12} /> : <SquareTerminal size={12} />}
         <span className="completion-title">{state.details && state.source === 'path' ? state.title : title}</span>
         <span className="completion-count">{state.items.length}</span>
       </div>
@@ -96,7 +103,8 @@ export function CompletionList({ state, onPick, onToggleDetails }: Props) {
                 'completion-item',
                 i === state.selected ? 'is-selected' : '',
                 item.kind === 'special' ? 'is-special' : '',
-                item.isDir ? 'is-dir' : ''
+                item.isDir ? 'is-dir' : '',
+                item.isDangerous ? 'is-dangerous' : ''
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -114,7 +122,12 @@ export function CompletionList({ state, onPick, onToggleDetails }: Props) {
               <span className="completion-name" data-testid="completion-name">
                 {item.name}
               </span>
-              {!state.details ? (
+              {item.insert ? (
+                // Spec önerisi: açıklama (uzunsa kısaltılır, tamamı ipucunda).
+                <span className="completion-detail" title={item.detail}>
+                  {item.detail}
+                </span>
+              ) : !state.details ? (
                 <span className="completion-hint">{hintFor(item)}</span>
               ) : !entry && item.kind !== 'special' ? (
                 <span className="completion-detail" title={item.detail}>

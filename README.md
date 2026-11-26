@@ -21,6 +21,11 @@ A portable terminal for **Windows and macOS** with parameterized snippets and a 
   - `↑/↓` select, `Tab` completes (a single match completes directly), `Esc` closes. If there is nothing to suggest, `Tab` goes to the shell's own completion.
   - `Ctrl+Space` toggles a detailed view (like `ls -al`: permissions, size, date, hidden files).
   - Settings: show while typing, only on `Tab` / `Ctrl+Space`, or off.
+- **Subcommands, options and values for ~90 popular tools**, with descriptions:
+  - `git`, `gh`, `npm`, `yarn`, `pnpm`, `docker`, `kubectl`, `helm`, `terraform`, `ssh`, `curl`, `pip`, `cargo`, `go`, `dotnet`, `brew` and more, from Fig's open-source [completion specs](https://github.com/withfig/autocomplete). On macOS (and in Git Bash) Unix tools such as `ls`, `grep`, `tar`, `chmod` and `ps` are covered too.
+  - Windows tools with Zortex's own specs: `winget`, `choco`, `scoop`, `wsl`, `ipconfig`, `ping`, `netstat`, `tasklist`, `taskkill`, `robocopy`, `shutdown`, `sfc`, `where`.
+  - Dynamic values: git branches, npm/yarn/pnpm scripts from the nearest `package.json`, WSL distributions, and so on. These are read-only queries that Zortex runs in the background (for example `git branch`). They run without a shell and time out after 5 seconds.
+  - In PowerShell, names that are cmdlet aliases (`ls`, `curl`…) keep PowerShell's meaning, and the Unix specs are not applied to them.
 - **Shell integration**: A small script reports the current folder and prompt position to Zortex on every prompt (PowerShell, cmd, zsh, bash, Git Bash, fish). Your own profile files load as usual and the prompt looks the same. It can be turned off in Settings.
 - **Search**:
   - Searches snippet names, commands, descriptions and category names.
@@ -144,3 +149,11 @@ tests/
   - How the integration is loaded: zsh via `ZDOTDIR`, bash via `--init-file`, fish via `--init-command`, PowerShell via `-EncodedCommand` (so execution policy does not block it), and cmd via `PROMPT`.
   - ConPTY on Windows can deliver OSC sequences ahead of the text that precedes them, so the input start is found from the prompt text (PowerShell, cmd) rather than from where the sequence arrived. Unix shells mark it with `133;B`.
   - Without integration (e.g. WSL), only default PowerShell/cmd prompts and `cd` are recognised.
+- **Completion specs**:
+  - The Fig specs (`@withfig/autocomplete`, MIT license) are bundled as separate chunks and loaded only when their command is typed. aws and gcloud are left out because together they would add about 50 MB.
+  - Generators run through a small runner in the main process with no shell and a time limit. On Windows, `.cmd` wrappers never get arguments containing `cmd.exe` metacharacters, so a half-typed word can never be executed.
+  - Fig's generators assume Unix tools. On Windows, `ls`, `cat` and the "find the nearest `package.json`" bash snippets are emulated in-process, and other `bash -c` scripts use Git Bash when it is installed.
+
+## Third-party notices
+
+Completion specs from [withfig/autocomplete](https://github.com/withfig/autocomplete) are used under the MIT license, Copyright (c) 2021 Hercules Labs Inc. (Fig).

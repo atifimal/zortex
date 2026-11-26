@@ -944,6 +944,10 @@ body.is-resizing * {
 .completion-item.is-special .completion-icon {
   color: var(--warn);
 }
+.completion-item.is-dangerous .completion-name,
+.completion-item.is-dangerous .completion-icon {
+  color: var(--danger);
+}
 .completion-name {
   font-family: var(--font-mono);
   min-width: 0;

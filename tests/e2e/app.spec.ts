@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,8 +31,11 @@ async function recordOutput(paneId: string): Promise<void> {
   }, paneId)
 }
 
+/** Biriken çıktı; görünmez OSC dizileri (kabuk entegrasyonu) çıkarılmış. ConPTY bunları metnin ortasına koyabilir. */
 async function output(paneId: string): Promise<string> {
-  return page.evaluate((id) => (window as unknown as { __out: Record<string, string> }).__out[id] ?? '', paneId)
+  const raw = await page.evaluate((id) => (window as unknown as { __out: Record<string, string> }).__out[id] ?? '', paneId)
+  // eslint-disable-next-line no-control-regex
+  return raw.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
 }
 
 test.beforeEach(async () => {
@@ -311,6 +315,83 @@ test('komut adları ve dosyalar önerilir; Ctrl+Space ayrıntılı görünümü 
     await expect(completion()).toBeHidden()
     await page.keyboard.press('Enter')
     await expect.poll(() => output('pane-1')).toContain('zortex-dosya-icerigi')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('spec: git alt komutları, seçenekleri ve dalları önerilir', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'zortex-git-'))
+  const git = (...args: string[]): void => {
+    execFileSync('git', ['-c', 'user.email=e2e@zortex.test', '-c', 'user.name=e2e', ...args], { cwd: repo })
+  }
+  git('init', '-q', '-b', 'main')
+  git('commit', '-q', '--allow-empty', '-m', 'init')
+  git('branch', 'feature-zortex')
+  try {
+    await recordOutput('pane-1')
+    await page.getByTestId('pane-1').locator('.pane-body').click()
+    await page.keyboard.type(`cd "${repo}"`)
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(600)
+
+    // Alt komut: açıklamasıyla listelenir, Tab ile tamamlanır.
+    await page.keyboard.type('git chec')
+    const checkout = completion().getByTestId('completion-item').filter({ hasText: /^checkout/ })
+    await expect(checkout).toHaveCount(1, { timeout: 30_000 })
+    await expect(checkout).toContainText(/branch/i)
+    await shot('11-git-alt-komut')
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Tab')
+
+    // Ardından dallar `git branch` ile üretilir.
+    await expect(names().filter({ hasText: /^feature-zortex$/ })).toHaveCount(1)
+    await shot('12-git-dallar')
+    await page.keyboard.type('feat')
+    await expect(names()).toHaveText(['feature-zortex'])
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Enter')
+    await expect.poll(() => output('pane-1')).toContain("Switched to branch 'feature-zortex'")
+
+    // Seçenekler tire ile başlayınca önerilir.
+    await page.keyboard.type('git commit --am')
+    await expect(names().filter({ hasText: /--amend/ })).toHaveCount(1)
+    await page.keyboard.press('Escape')
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('spec: npm betikleri üst klasördeki package.json dan, Windows araçları kendi spec lerinden önerilir', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'zortex-npm-'))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { 'zortex-dev': 'vite', 'zortex-test': 'vitest' } }))
+  mkdirSync(join(root, 'packages', 'app'), { recursive: true })
+  try {
+    await page.getByTestId('pane-1').locator('.pane-body').click()
+    // Alt klasörden de bulunur (betik package.json'u yukarı doğru arar).
+    await page.keyboard.type(`cd "${join(root, 'packages', 'app')}"`)
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(600)
+    await page.keyboard.type('npm run zortex')
+    await expect(names()).toHaveText(['zortex-dev', 'zortex-test'], { timeout: 30_000 })
+    await shot('13-npm-betikleri')
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Control+c')
+    await page.waitForTimeout(400)
+
+    if (process.platform === 'win32') {
+      await page.keyboard.type('ipconfig /fl')
+      await expect(names()).toHaveText(['/flushdns'])
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Control+c')
+      await page.waitForTimeout(400)
+      await page.keyboard.type('winget ins')
+      await expect(names()).toHaveText(['install'])
+      await page.keyboard.press('Tab')
+      await page.keyboard.type('--sc')
+      await expect(names()).toHaveText(['--scope'])
+      await page.keyboard.press('Escape')
+    }
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

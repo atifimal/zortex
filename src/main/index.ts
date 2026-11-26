@@ -4,11 +4,11 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell, type IpcMa
 import { PtyManager } from './pty'
 import { DataStore, resolveDataDir } from './store'
 import { listShells } from './shells'
-import { listCommands, listDir } from './completion'
+import { execForCompletion, listCommands, listDir } from './completion'
 import { installShellIntegration } from './shellIntegration'
 import { mergeData, sanitizeData } from '../shared/data'
 import type { AppData } from '../shared/types'
-import { IPC, type PtyCreateOptions } from '../preload/api'
+import { IPC, type ExecRequest, type PtyCreateOptions } from '../preload/api'
 import type { CommandsRequest, ListDirRequest } from './completion'
 import appIcon from '../../resources/icon.png?asset'
 
@@ -118,7 +118,7 @@ function registerIpc(): void {
   })
   ipcMain.handle(IPC.completionCommands, (event, req: CommandsRequest) => {
     if (!trusted(event)) throw new Error('untrusted')
-    if (!isString(req?.shellPath, 4096)) return []
+    if (!isString(req?.shellPath, 4096)) return { entries: [], complete: true }
     const shellPath = listShells().find((s) => s.path === req.shellPath)?.path
     return listCommands({
       kind: req.kind === 'pwsh' || req.kind === 'cmd' ? req.kind : 'posix',
@@ -127,6 +127,29 @@ function registerIpc(): void {
       pathEnv: isString(req.pathEnv, 100_000) ? req.pathEnv : null,
       msysRoot: isString(req.msysRoot, 4096) ? req.msysRoot : null
     })
+  })
+  ipcMain.handle(IPC.completionExec, (event, req: ExecRequest) => {
+    if (!trusted(event)) throw new Error('untrusted')
+    const valid =
+      isString(req?.command, 256) &&
+      req.command.length > 0 &&
+      Array.isArray(req.args) &&
+      req.args.length <= 64 &&
+      req.args.every((a) => isString(a, 4096)) &&
+      isString(req.cwd, 4096) &&
+      (req.cwd === '' || isAbsolute(req.cwd))
+    if (!valid) return { stdout: '', stderr: '', status: 1 }
+    const gitBash = listShells().find((s) => s.id === 'git-bash')?.path ?? null
+    return execForCompletion(
+      {
+        command: req.command,
+        args: req.args,
+        cwd: req.cwd,
+        pathEnv: isString(req.pathEnv, 100_000) ? req.pathEnv : null,
+        timeout: typeof req.timeout === 'number' ? req.timeout : undefined
+      },
+      gitBash
+    )
   })
 
   ipcMain.handle(IPC.dataLoad, (event) => {

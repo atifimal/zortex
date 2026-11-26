@@ -23,6 +23,22 @@ export interface FsEntry {
   mode: number
 }
 
+export interface ExecRequest {
+  command: string
+  args: string[]
+  /** Boşsa ev klasörü. */
+  cwd: string
+  /** Kabuğun bildirdiği PATH; yoksa uygulamanınki. */
+  pathEnv: string | null
+  timeout?: number
+}
+
+export interface ExecResult {
+  stdout: string
+  stderr: string
+  status: number
+}
+
 export interface ZortexApi {
   platform: Platform
   pty: {
@@ -45,6 +61,8 @@ export interface ZortexApi {
       pathEnv: string | null
       msysRoot: string | null
     }): Promise<{ entries: CommandEntry[]; complete: boolean }>
+    /** Tamamlama spec'lerinin üreticileri için kabuksuz, zaman aşımlı komut çalıştırır (`git branch` vb.). */
+    exec(req: ExecRequest): Promise<ExecResult>
   }
   data: {
     load(): Promise<AppData>
@@ -74,6 +92,7 @@ export const IPC = {
   ptyCwd: 'pty:cwd',
   completionListDir: 'completion:list-dir',
   completionCommands: 'completion:commands',
+  completionExec: 'completion:exec',
   dataLoad: 'data:load',
   dataSave: 'data:save',
   dataExport: 'data:export',

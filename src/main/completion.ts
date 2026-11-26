@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process'
-import { readdir, readlink, stat, lstat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { readdir, readFile, readlink, stat, lstat } from 'node:fs/promises'
 import os from 'node:os'
 import { delimiter, extname, isAbsolute, join, resolve } from 'node:path'
 import { msysToWindows, type ShellKind } from '../shared/shell'
 import type { CommandEntry } from '../shared/builtins'
-import type { FsEntry } from '../preload/api'
-
+import type { ExecRequest, ExecResult, FsEntry } from '../preload/api'
 
 export interface ListDirRequest {
   cwd: string
@@ -216,4 +216,146 @@ export async function processCwd(pid: number): Promise<string | null> {
     })
   }
   return null
+}
+
+// ---------- Spec üreticileri için komut çalıştırma ----------
+
+const FAILED: ExecResult = { stdout: '', stderr: '', status: 1 }
+/** cmd.exe'nin yorumladığı karakterler: `.cmd/.bat` sarmalayıcılarına bunları içeren argüman verilmez. */
+const CMD_META = /["&|<>^%!\r\n]/
+const MAX_CAT_BYTES = 1024 * 1024
+
+/** Windows'ta komutu PATH + PATHEXT ile bulur (`npm` → `npm.cmd`). */
+function findOnWindowsPath(command: string, pathEnv: string): string | null {
+  const exts = [...pathExts('cmd')]
+  const hasExt = exts.includes(extname(command).toLowerCase())
+  const candidates = (dir: string): string[] => (hasExt ? [join(dir, command)] : exts.map((e) => join(dir, command + e)))
+  if (isAbsolute(command)) return candidates('').find(existsSync) ?? null
+  for (const dir of pathEnv.split(delimiter)) {
+    if (!dir) continue
+    const found = candidates(dir).find(existsSync)
+    if (found) return found
+  }
+  return null
+}
+
+/** Fig üreticilerinin sık kullandığı `ls -1ApL` çıktısını taklit eder (Windows'ta `ls` yoktur). */
+async function emulateLs(cwd: string, args: string[]): Promise<ExecResult> {
+  const flags = args.filter((a) => a.startsWith('-')).join('')
+  const target = args.find((a) => !a.startsWith('-')) ?? '.'
+  const { entries } = await listDir({ cwd, dir: target, msysRoot: null })
+  const all = flags.includes('a') || flags.includes('A')
+  const lines = entries
+    .filter((e) => all || !e.name.startsWith('.'))
+    .map((e) => (flags.includes('p') && e.isDir ? `${e.name}/` : e.name))
+  return { stdout: lines.join('\n'), stderr: '', status: 0 }
+}
+
+async function emulateCat(cwd: string, files: string[]): Promise<ExecResult> {
+  let stdout = ''
+  for (const file of files) {
+    try {
+      const full = resolve(cwd, expandHome(file))
+      if ((await stat(full)).size > MAX_CAT_BYTES) return FAILED
+      stdout += (await readFile(full, 'utf8')).replace(/\r\n/g, '\n')
+    } catch {
+      return { stdout, stderr: `cat: ${file}: No such file or directory`, status: 1 }
+    }
+  }
+  return { stdout, stderr: '', status: 0 }
+}
+
+/**
+ * npm/yarn/pnpm spec'lerinin `until [[ -f package.json ]] … do cd ..; done; cat package.json` ve
+ * `… node_modules/ … ls -1 node_modules/.bin/` betiklerini kabuk çalıştırmadan karşılar
+ * (Windows'ta bash olmayabilir; olsa da süreç başlatmaktan çok daha hızlıdır).
+ */
+async function emulateFindUp(cwd: string, script: string): Promise<ExecResult | null> {
+  const cat = /^until \[\[ -f ([\w.-]+) \]\] \|\| \[\[ \$PWD = '\/' \]\]; do cd \.\.; done; cat \1$/.exec(script)
+  const bin = /^until \[\[ -d node_modules\/ \]\] \|\| \[\[ \$PWD = '\/' \]\]; do cd \.\.; done; ls -1 node_modules\/\.bin\/$/.test(script)
+  if (!cat && !bin) return null
+  let dir = resolve(cwd)
+  for (;;) {
+    const target = cat ? join(dir, cat[1]) : join(dir, 'node_modules')
+    if (existsSync(target)) {
+      if (cat) return emulateCat(dir, [cat[1]])
+      // Windows'taki .cmd/.ps1 sarmalayıcıları tek ada indirgenir.
+      const names = new Set((await emulateLs(join(target, '.bin'), ['-1'])).stdout.split('\n').map((n) => n.replace(/\.(cmd|ps1)$/i, '')))
+      return { stdout: [...names].filter(Boolean).join('\n'), stderr: '', status: 0 }
+    }
+    const parent = resolve(dir, '..')
+    if (parent === dir) return { stdout: '', stderr: '', status: 1 }
+    dir = parent
+  }
+}
+
+/**
+ * Tamamlama spec'lerinin üreticileri için bir komutu kabuk kullanmadan çalıştırır
+ * (ör. `git branch`, `npm run` için package.json). Yalnızca okuma amaçlı sorgular için kullanılır.
+ * @param gitBash Windows'ta `bash -c …` kullanan üreticiler için Git Bash yolu.
+ */
+export async function execForCompletion(req: ExecRequest, gitBash: string | null): Promise<ExecResult> {
+  const cwd = req.cwd || os.homedir()
+  if (req.command === 'fig') return FAILED
+  if (req.command === 'cat' && req.args.length > 0 && req.args.every((a) => !a.startsWith('-'))) {
+    return emulateCat(cwd, req.args)
+  }
+  if (isWin && req.command === 'ls') return emulateLs(cwd, req.args)
+  if ((req.command === 'bash' || req.command === 'sh') && req.args[0] === '-c') {
+    const emulated = await emulateFindUp(cwd, req.args[1] ?? '')
+    if (emulated) return emulated
+  }
+
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  const pathKey = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH'
+  if (req.pathEnv) env[pathKey] = req.pathEnv
+  // Tamamlama sırasında hiçbir komut kullanıcıdan girdi beklememeli.
+  env.GIT_TERMINAL_PROMPT = '0'
+  env.GIT_OPTIONAL_LOCKS = '0'
+  env.NO_COLOR = '1'
+
+  let file = req.command
+  let args = req.args
+  let verbatim = false
+  if (isWin) {
+    if (req.command === 'bash' || req.command === 'sh') {
+      if (!gitBash) return FAILED
+      file = gitBash
+    } else {
+      const found = findOnWindowsPath(req.command, env[pathKey] ?? '')
+      if (!found) return FAILED
+      file = found
+      if (/\.(cmd|bat)$/i.test(found)) {
+        // Node, .cmd dosyalarını kabuksuz çalıştırmaz; cmd.exe'ye yalnızca zararsız argümanlar verilir.
+        if (args.some((a) => CMD_META.test(a))) return FAILED
+        const quote = (s: string): string => (/[\s]/.test(s) ? `"${s}"` : s)
+        args = ['/d', '/s', '/c', `"${[found, ...req.args].map(quote).join(' ')}"`]
+        file = env.ComSpec ?? 'cmd.exe'
+        verbatim = true
+      }
+    }
+  }
+
+  return new Promise((done) => {
+    const child = execFile(
+      file,
+      args,
+      {
+        cwd,
+        env,
+        timeout: Math.min(req.timeout ?? 5000, 15_000),
+        maxBuffer: 4 * 1024 * 1024,
+        windowsHide: true,
+        windowsVerbatimArguments: verbatim
+      },
+      (error, stdout, stderr) => {
+        const status = error ? (typeof error.code === 'number' ? error.code : 1) : 0
+        // Fig üreticileri Unix satır sonları bekler (Windows'ta çıktı \r\n ile gelir).
+        const lf = (s: unknown): string => String(s ?? '').replace(/\r\n/g, '\n')
+        done({ stdout: lf(stdout), stderr: lf(stderr), status })
+      }
+    )
+    child.stdin?.end()
+  })
 }

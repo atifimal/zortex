@@ -10,6 +10,8 @@ files:
   - out/**
   # Pencere ikonu (src/main içinden ?asset ile okunur).
   - resources/icon.png
+  # Paketlenen üçüncü taraf kodların lisans bildirimleri (Fig tamamlama spec'leri).
+  - resources/THIRD_PARTY_NOTICES.txt
   - package.json
   # node-pty: yalnızca çalışma zamanı dosyaları; kaynak kod ve hata ayıklama sembolleri paketlenmez.
   - "!node_modules/node-pty/{src,deps,third_party,scripts,typings,binding.gyp}"

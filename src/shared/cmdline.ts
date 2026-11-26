@@ -208,6 +208,47 @@ export function replacementKeys(word: Word, r: Replacement, kind: ShellKind, pla
   return r.nextChar === quote && !addedQuote ? `${typed}${RIGHT} ` : `${typed}${quote} `
 }
 
+export interface Insertion {
+  /** Sözcüğün (ya da `queryTerm` sonrasının) yerine yazılacak değer. */
+  text: string
+  /** Olduğu gibi yazılır (spec'in `insertValue`'su): kaçış ve tırnak eklenmez. */
+  raw?: boolean
+  /** `space`: ardından boşluk; `none`: hiçbir şey (`--opt=`, klasör). */
+  suffix: 'space' | 'none'
+  /** Yazdıktan sonra imleç bu kadar sola alınır (`{cursor}`). */
+  cursorBack?: number
+  /** Sözcüğün bu karakterin son geçtiği yere kadarki kısmı korunur (`--format=`, `origin/`). */
+  queryTerm?: string
+  nextChar?: string
+}
+
+/** Spec önerisini (alt komut, seçenek, değer) imleçteki sözcüğe yazmak için tuşlar. */
+export function insertionKeys(word: Word, ins: Insertion, kind: ShellKind): string {
+  const body = word.quote ? word.raw.slice(1) : word.raw
+  const at = ins.queryTerm ? body.lastIndexOf(ins.queryTerm) : -1
+  const keep = at === -1 ? '' : body.slice(0, at + ins.queryTerm!.length)
+
+  let quote: string = word.quote
+  let addedQuote = false
+  let core = ins.text
+  if (!ins.raw && !quote) {
+    if (kind === 'posix') core = ins.text.replace(POSIX_SPECIAL, '\\$&')
+    else if (NEEDS_QUOTE[kind].test(keep + ins.text)) {
+      quote = '"'
+      addedQuote = true
+    }
+  }
+  const nextRaw = quote + keep + core
+  const typed = nextRaw.startsWith(word.raw)
+    ? nextRaw.slice(word.raw.length)
+    : BACKSPACE.repeat([...word.raw].length) + nextRaw
+
+  if (ins.cursorBack) return typed + LEFT.repeat(ins.cursorBack)
+  if (ins.suffix === 'none') return addedQuote ? `${typed}${quote}${LEFT}` : typed
+  if (!quote) return `${typed} `
+  return ins.nextChar === quote && !addedQuote ? `${typed}${RIGHT} ` : `${typed}${quote} `
+}
+
 /**
  * Kabuk entegrasyonu yokken ekrandaki satırdan girdiyi tahmin eder.
  * Windows'ta varsayılan PowerShell/cmd istemi atlanır; diğer durumlarda yalnızca `cd` tanınır.
