@@ -135,7 +135,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
     <aside className="sidebar" data-testid="sidebar">
       <div className="sidebar-top">
         <div className="search">
-          <Search size={14} className="search-icon" />
+          <Search size={16} className="search-icon" />
           <input
             ref={searchRef}
             className="search-input"
@@ -148,7 +148,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
           />
           {query && (
             <button className="icon-btn search-clear" onClick={() => setQuery('')} aria-label="Aramayı temizle">
-              <X size={13} />
+              <X size={15} />
             </button>
           )}
         </div>
@@ -159,10 +159,10 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
             title={`Yeni snippet (${shortcutLabel('N')})`}
             data-testid="new-snippet"
           >
-            <Plus size={14} /> Snippet
+            <Plus size={16} /> Snippet
           </button>
           <button className="btn btn-small" onClick={props.onNewCategory} title="Yeni kategori" data-testid="new-category">
-            <FolderPlus size={14} /> Kategori
+            <FolderPlus size={16} /> Kategori
           </button>
           <button
             className="icon-btn"
@@ -171,7 +171,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
             title={allCollapsed ? 'Tümünü genişlet' : 'Tümünü daralt'}
             aria-label={allCollapsed ? 'Tümünü genişlet' : 'Tümünü daralt'}
           >
-            {allCollapsed ? <ChevronsUpDown size={15} /> : <ChevronsDownUp size={15} />}
+            {allCollapsed ? <ChevronsUpDown size={17} /> : <ChevronsDownUp size={17} />}
           </button>
         </div>
       </div>
@@ -181,7 +181,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
           <div className="empty">
             <p>Henüz kategori yok.</p>
             <button className="btn btn-small" onClick={props.onNewCategory}>
-              <FolderPlus size={14} /> İlk kategoriyi oluştur
+              <FolderPlus size={16} /> İlk kategoriyi oluştur
             </button>
           </div>
         )}
@@ -205,20 +205,20 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
                   data-nav-item
                   data-testid="category-toggle"
                 >
-                  <ChevronRight size={14} className={`chevron${open ? ' is-open' : ''}`} />
-                  {open ? <FolderOpen size={14} className="folder-icon" /> : <Folder size={14} className="folder-icon" />}
+                  <ChevronRight size={16} className={`chevron${open ? ' is-open' : ''}`} />
+                  {open ? <FolderOpen size={16} className="folder-icon" /> : <Folder size={16} className="folder-icon" />}
                   <span className="tree-category-name">{highlight(category.name, terms)}</span>
                   <span className="count">{items.length}</span>
                 </button>
                 <div className="row-actions">
                   <button className="icon-btn" title="Bu kategoriye snippet ekle" onClick={() => props.onNewSnippet(category.id)}>
-                    <Plus size={13} />
+                    <Plus size={15} />
                   </button>
                   <button className="icon-btn" title="Yeniden adlandır" onClick={() => props.onRenameCategory(category)}>
-                    <Pencil size={13} />
+                    <Pencil size={15} />
                   </button>
                   <button className="icon-btn danger" title="Kategoriyi sil" onClick={() => props.onDeleteCategory(category)}>
-                    <Trash2 size={13} />
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </div>
@@ -226,7 +226,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
                 <div className="tree-items">
                   {items.length === 0 && !searching && (
                     <button className="tree-empty" onClick={() => props.onNewSnippet(category.id)}>
-                      <Plus size={12} /> Snippet ekle
+                      <Plus size={14} /> Snippet ekle
                     </button>
                   )}
                   {items.map((s) => {
@@ -240,7 +240,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
                           data-nav-item
                           data-testid="snippet-run"
                         >
-                          <Play size={11} className="snippet-play" />
+                          <Play size={13} className="snippet-play" />
                           <span className="snippet-text">
                             <span className="snippet-name">
                               {highlight(s.name, terms)}
@@ -254,10 +254,10 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
                         </button>
                         <div className="row-actions">
                           <button className="icon-btn" title="Düzenle" onClick={() => props.onEditSnippet(s)} data-testid="snippet-edit">
-                            <Pencil size={13} />
+                            <Pencil size={15} />
                           </button>
                           <button className="icon-btn" title="Kopyasını oluştur" onClick={() => props.onDuplicateSnippet(s)}>
-                            <Copy size={13} />
+                            <Copy size={15} />
                           </button>
                           <button
                             className="icon-btn danger"
@@ -265,7 +265,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
                             onClick={() => props.onDeleteSnippet(s)}
                             data-testid="snippet-delete"
                           >
-                            <Trash2 size={13} />
+                            <Trash2 size={15} />
                           </button>
                         </div>
                       </div>
@@ -279,7 +279,7 @@ export const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(props, 
       </div>
 
       <footer className="sidebar-footer" data-testid="target-indicator">
-        <Crosshair size={13} className="accent" />
+        <Crosshair size={15} className="accent" />
         <span>
           Hedef: <strong>{targetLabel}</strong>
         </span>
